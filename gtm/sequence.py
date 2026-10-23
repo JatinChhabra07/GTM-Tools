@@ -8,7 +8,7 @@ import sqlite3
 
 from gtm import validate
 from gtm.config import ProductConfig
-from gtm.util import sha256
+from gtm.util import display_company, sha256
 
 
 def steps_from_json(raw: str) -> list[validate.Step]:
@@ -32,7 +32,7 @@ def context(cfg: ProductConfig, *, seq: sqlite3.Row | dict, lead: sqlite3.Row, a
         db_recipient_email=lead["email"] or "",
         lead_first_name=lead["first_name"] or first_name(lead["full_name"]),
         lead_full_name=lead["full_name"] or "",
-        company=account["name"] or "",
+        company=display_company(account["name"], account["domain"]),
         is_signal_author=bool(lead["is_signal_author"]),
         reference_policy=seq["reference_policy"],
         allowed_urls=frozen.get("allowed_urls", []),

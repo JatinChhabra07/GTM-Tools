@@ -181,3 +181,17 @@ def test_feedback_referral_and_draft(product):
     ref = product.execute("SELECT * FROM leads WHERE referral = 1").fetchone()
     assert ref["full_name"] == "Priya Shah"
     assert product.execute("SELECT count(*) FROM reply_drafts WHERE status = 'pending_review'").fetchone()[0] == 2
+
+
+def test_url_never_becomes_a_company_name(product):
+    from gtm import accounts
+    from gtm.util import display_company, looks_like_url
+    assert looks_like_url("https://shopco.example/") and looks_like_url("shopco.example") and looks_like_url("www.x.io")
+    assert not looks_like_url("Shop Co.") and not looks_like_url("Acme Inc")
+    assert display_company("https://shop-co.example/", "shop-co.example") == "Shop Co"
+    accounts.ensure_account(product, domain="z.example", name="https://z.example/", source="tal", evidence="https://z.example/")
+    assert product.execute("SELECT name FROM accounts WHERE domain = 'z.example'").fetchone()[0] == "z.example"
+    _full()
+    for (name,) in product.execute("SELECT name FROM accounts WHERE domain IN ('shopco.example', 'brandly.example')"):
+        assert not looks_like_url(name)  # the profiler's real name replaced the placeholder
+    assert all(r[0] == "[]" for r in product.execute("SELECT validator_json FROM sequences"))

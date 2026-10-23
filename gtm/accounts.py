@@ -19,7 +19,7 @@ from gtm.config import ProductConfig
 from gtm.gates import country_code
 from gtm.paths import product_config_dir
 from gtm.score import client_prints, firmographics, lookalike, prescore
-from gtm.util import domain_of, now_iso
+from gtm.util import domain_of, looks_like_url, now_iso
 
 JUNK_DOMAINS = ("linkedin.com", "facebook.com", "instagram.com", "twitter.com", "x.com", "youtube.com",
                 "wikipedia.org", "crunchbase.com", "g2.com", "capterra.com", "clutch.co", "glassdoor.com",
@@ -43,6 +43,8 @@ def ensure_account(conn: sqlite3.Connection, *, domain: str, name: str, source: 
     domain = domain_of(domain)
     if not domain or not evidence.startswith("http"):
         return False
+    if looks_like_url(name):
+        name = domain  # a placeholder: the profiler replaces it with the site's own name
     cur = conn.execute(
         "INSERT OR IGNORE INTO accounts (domain, name, source, resolution_evidence, linkedin_url, status, created_at) "
         "VALUES (?,?,?,?,?,?,?)", (domain, (name or domain)[:120], source, evidence, linkedin_url, status, now_iso()))
@@ -314,7 +316,8 @@ def candidates_from_search(llm_session, cfg: ProductConfig, queries: list[str], 
                 continue
             d = domain_of(c.url)  # the result's own host: the model can't invent a domain here
             if d and not is_junk(d):
-                found.setdefault(d, {"domain": d, "name": (c.name or d)[:120], "evidence": c.url})
+                name = c.name if c.name and not looks_like_url(c.name) else d
+                found.setdefault(d, {"domain": d, "name": name[:120], "evidence": c.url})
     return list(found.values())
 
 

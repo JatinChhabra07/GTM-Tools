@@ -16,7 +16,7 @@ from gtm import gates, kb, sequence, validate
 from gtm import observations as obs
 from gtm.paths import REPO_ROOT
 from gtm.schemas import HumanizeOut, SequenceOut
-from gtm.util import now_iso, sha1
+from gtm.util import display_company, now_iso, sha1
 
 MAX_ATTEMPTS = 3
 WRITING_SECTIONS = ("Core principles", "Length and shape", "Email 1: the observation", "Email 2: a new angle",
@@ -84,6 +84,7 @@ def build_inputs(ctx, lead: sqlite3.Row, account: sqlite3.Row) -> dict | None:
     primary = sorted(own or latest, key=lambda o: (o.rank, -o.confidence))[0]
     post = ctx.conn.execute("SELECT * FROM posts WHERE url = ?", (primary.evidence_url,)).fetchone()
     policy = reference_policy(primary, lead, post)
+    company = display_company(account["name"], account["domain"])
     q = f"{primary.signal_code.lower().replace('_', ' ')} {primary.value_text or ''} {lead['persona'] or ''}"
     proofs = kb.search(ctx.slug, q, category="proof", k=2)
     facts = kb.search(ctx.slug, q, category="product_fact", k=5)
@@ -104,7 +105,7 @@ def build_inputs(ctx, lead: sqlite3.Row, account: sqlite3.Row) -> dict | None:
             "proof": {"id": proof["id"], "text": proof["text"]} if proof else None,
             "voice": [v["text"] for v in voice] + [ctx.cfg.voice.tone],
             "recipient": {"first_name": lead["first_name"] or "", "title": lead["title"] or "",
-                          "company": account["name"], "greeting": (lead["first_name"] or f"{account['name']} team"),
+                          "company": company, "greeting": (lead["first_name"] or f"{company} team"),
                           "is_generic_inbox": bool(lead["is_generic_inbox"])},
             "primary_signal": {"id": primary.id, "code": primary.signal_code, "kind": primary.kind,
                                "playbook": section(SIGNAL_SECTION.get(primary.signal_code, "No real signal"), "signals.md")},

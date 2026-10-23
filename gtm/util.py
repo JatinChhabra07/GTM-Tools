@@ -64,6 +64,22 @@ def dumps(obj) -> str:
     return json.dumps(obj, ensure_ascii=False, sort_keys=True, default=str)
 
 
+_URLISH = re.compile(r"(https?:|www\.|/|^[\w-]+(\.[\w-]+)+$)", re.I)
+
+
+def looks_like_url(text: str | None) -> bool:
+    """A 'company name' that is really a URL or bare domain (models and search results do this)."""
+    return bool(text) and bool(_URLISH.search(text.strip()))
+
+
+def display_company(name: str | None, domain: str) -> str:
+    """The name to put in an email: the real name, or the domain's first label ('shopco.com' -> 'Shopco')."""
+    if name and not looks_like_url(name):
+        return name
+    label = domain_of(domain).split(".")[0] if domain else ""
+    return label.replace("-", " ").title()
+
+
 def sanitize_name(text: str | None, limit: int = 60) -> str:
     """For reports: letters, digits and basic punctuation only (plan §5 Phase 8)."""
     cleaned = re.sub(r"[^\w .,&'()/-]", "", text or "", flags=re.UNICODE)
