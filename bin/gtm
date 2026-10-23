@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Runs the gtm CLI. The venv lives on the Linux disk, not on the NTFS mount (plan §5 grammar).
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export UV_PROJECT_ENVIRONMENT="${UV_PROJECT_ENVIRONMENT:-$HOME/.local/share/gtm-tools/venv}"
+exec uv run --project "$ROOT" --quiet gtm "$@"

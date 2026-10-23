@@ -1,0 +1,323 @@
+"""gtm command line. Run via bin/gtm. See plan.md §5 for the phase each command belongs to."""
+
+from __future__ import annotations
+
+import getpass
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+import typer
+import yaml
+
+from gtm import catalog, config, ledger, llm, secrets, signing, store
+from gtm.paths import (BadSlug, check_slug, config_dir, data_dir, ledger_db, product_config_dir,
+                       products_dir, state_db)
+
+app = typer.Typer(no_args_is_help=True, add_completion=False, help="GTM-Tools outreach automation")
+product_app = typer.Typer(no_args_is_help=True, help="Create and inspect products")
+secrets_app = typer.Typer(no_args_is_help=True, help="API keys (type them in YOUR terminal)")
+keys_app = typer.Typer(no_args_is_help=True, help="Approval signing keys (PIN)")
+setup_app = typer.Typer(no_args_is_help=True, help="What the setup wizard still needs")
+config_app = typer.Typer(no_args_is_help=True, help="Read/merge product.yaml")
+llm_app = typer.Typer(no_args_is_help=True, help="Isolated Claude calls")
+app.add_typer(product_app, name="product")
+app.add_typer(secrets_app, name="secrets")
+app.add_typer(keys_app, name="keys")
+app.add_typer(setup_app, name="setup")
+app.add_typer(config_app, name="config")
+app.add_typer(llm_app, name="llm")
+
+
+def _fail(msg: str, code: int = 1) -> None:
+    typer.secho(msg, fg=typer.colors.RED, err=True)
+    raise typer.Exit(code)
+
+
+def _slug(slug: str) -> str:
+    try:
+        return check_slug(slug)
+    except BadSlug as e:
+        _fail(str(e))
+        raise  # unreachable
+
+
+def require_human_terminal(action: str) -> None:
+    """Human-only actions: a real TTY, and not from inside a Claude Code session.
+    The PIN (for signing) is the real guard; this stops accidental use."""
+    if os.environ.get("CLAUDECODE") or os.environ.get("CLAUDE_CODE_ENTRYPOINT"):
+        _fail(f"`{action}` must be run by you in your own terminal, not inside Claude Code.")
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        _fail(f"`{action}` needs an interactive terminal.")
+
+
+# ---------------------------------------------------------------- product
+
+@product_app.command("create")
+def product_create(slug: str = typer.Option(..., help="short id, e.g. acme"),
+                   name: str = typer.Option(...), url: str = typer.Option(...)) -> None:
+    """Create product.yaml (safe defaults), state.db, and seed the signal catalog."""
+    slug = _slug(slug)
+    if config.config_path(slug).exists():
+        _fail(f"product {slug!r} already exists")
+    try:
+        cfg = config.ProductConfig(product=config.ProductInfo(slug=slug, name=name, url=url))
+    except Exception as e:  # pydantic error text is readable
+        _fail(f"invalid product: {e}")
+    path = config.save(cfg)
+    conn = store.open_state(slug)
+    added = catalog.seed(conn)
+    ledger.open_ledger().close()
+    typer.echo(json.dumps({"created": slug, "config": str(path), "state_db": str(state_db(slug)),
+                           "signal_codes_seeded": added}, indent=2))
+
+
+@product_app.command("list")
+def product_list() -> None:
+    root = products_dir()
+    slugs = sorted(p.name for p in root.iterdir() if (p / "product.yaml").exists()) if root.exists() else []
+    typer.echo(json.dumps(slugs))
+
+
+@product_app.command("show")
+def product_show(product: str = typer.Option(...)) -> None:
+    """The first thing every skill runs: proves which product the session is on."""
+    cfg = config.load(_slug(product))
+    typer.echo(f"PRODUCT: {cfg.product.slug} | {cfg.product.name} | {cfg.product.url}")
+
+
+# ---------------------------------------------------------------- config
+
+@config_app.command("get")
+def config_get(product: str = typer.Option(...)) -> None:
+    cfg = config.load(_slug(product))
+    typer.echo(yaml.safe_dump(cfg.model_dump(mode="json", exclude_none=True), sort_keys=False))
+
+
+def _deep_merge(base: dict, patch: dict) -> dict:
+    out = dict(base)
+    for k, v in patch.items():
+        out[k] = _deep_merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+    return out
+
+
+@config_app.command("merge")
+def config_merge(product: str = typer.Option(...),
+                 file: Path = typer.Option(..., exists=True, help="YAML with the keys to change")) -> None:
+    """Merge answers from the setup wizard into product.yaml. Validated; refuses unsafe changes."""
+    slug = _slug(product)
+    current = config.load(slug).model_dump(mode="json", exclude_none=True)
+    patch = yaml.safe_load(file.read_text()) or {}
+    if not isinstance(patch, dict):
+        _fail("patch must be a YAML mapping")
+    if "product" in patch and patch["product"].get("slug", slug) != slug:
+        _fail("the product slug can't be changed")
+    try:
+        cfg = config.ProductConfig.model_validate(_deep_merge(current, patch))
+    except Exception as e:
+        _fail(f"rejected: {e}")
+    config.save(cfg)
+    typer.echo(f"updated {config.config_path(slug)}")
+
+
+# ---------------------------------------------------------------- secrets
+
+@secrets_app.command("set")
+def secrets_set(name: str = typer.Argument(None, help="one key, or omit to be asked for each")) -> None:
+    """Type API keys here, in YOUR terminal. Input is hidden and never shown again."""
+    require_human_terminal("gtm secrets set")
+    names = [name] if name else list(secrets.KNOWN)
+    for key in names:
+        if key not in secrets.KNOWN:
+            _fail(f"unknown key {key}")
+        need, help_text = secrets.KNOWN[key]
+        typer.echo(f"\n{key} ({need}): {help_text}")
+        value = getpass.getpass("  paste value (Enter to skip): ")
+        if value.strip():
+            secrets.set_value(key, value)
+            typer.echo("  saved")
+
+
+@secrets_app.command("status")
+def secrets_status() -> None:
+    """Which keys are set. Names only, never values."""
+    typer.echo(json.dumps({"file_mode_ok": secrets.file_mode_ok(), "keys": secrets.status()}, indent=2))
+
+
+# ---------------------------------------------------------------- signing keys
+
+@keys_app.command("init")
+def keys_init() -> None:
+    """Create your approval PIN + signing key. Only you should know the PIN."""
+    require_human_terminal("gtm keys init")
+    if signing.keys_exist():
+        _fail("keys already exist; use `bin/gtm keys change-pin`")
+    typer.echo(f"Choose an approval PIN (at least {signing.MIN_PIN_LEN} characters). "
+               "You'll type it when you review emails. Never share it or type it into chat.")
+    pin = getpass.getpass("  PIN: ")
+    if pin != getpass.getpass("  repeat PIN: "):
+        _fail("PINs don't match")
+    try:
+        signing.init_keys(pin)
+    except signing.SigningError as e:
+        _fail(str(e))
+    typer.echo("signing key created")
+
+
+@keys_app.command("change-pin")
+def keys_change_pin() -> None:
+    require_human_terminal("gtm keys change-pin")
+    old = getpass.getpass("  current PIN: ")
+    new = getpass.getpass("  new PIN: ")
+    if new != getpass.getpass("  repeat new PIN: "):
+        _fail("PINs don't match")
+    try:
+        signing.change_pin(old, new)
+    except signing.SigningError as e:
+        _fail(str(e))
+    typer.echo("PIN changed")
+
+
+# ---------------------------------------------------------------- isolated LLM
+
+@llm_app.command("ping")
+def llm_ping() -> None:
+    """One isolated, tool-less call, to prove the subscription + isolation work."""
+    try:
+        res = llm.call("Reply with exactly: OK")
+    except llm.LLMError as e:
+        _fail(f"{type(e).__name__}: {e}")
+    typer.echo(json.dumps({"result": res.text, "model": res.model, "duration_ms": res.duration_ms}))
+
+
+# ---------------------------------------------------------------- setup + doctor
+
+def _tool_checks() -> dict[str, dict]:
+    """Every tool/skill the plan relies on (CLAUDE.md 'Tool & skill map')."""
+    home = Path.home()
+    skills = home / ".claude" / "skills"
+
+    plugins = home / ".claude" / "plugins"
+
+    def skill(name: str) -> bool:
+        if (skills / name / "SKILL.md").exists():
+            return True
+        return plugins.exists() and any(plugins.glob(f"**/skills/{name}/SKILL.md"))
+
+    def mcp_listed(name: str) -> bool | None:
+        exe = shutil.which("claude")
+        if not exe:
+            return None
+        try:
+            out = subprocess.run([exe, "mcp", "list"], capture_output=True, text=True, timeout=90).stdout
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        return any(line.split(":")[0].strip().endswith(name) for line in out.splitlines())
+
+    last30 = Path(os.environ.get("GTM_LAST30DAYS_DIR", data_dir() / "vendor" / "last30days-skill"))
+    try:
+        llm.probe_isolation()
+        isolation = True
+    except llm.IsolationUnavailable:
+        isolation = False
+    return {
+        "claude_isolation": {"ok": isolation, "used_for": "all judgement on untrusted text"},
+        "wigolo_mcp": {"ok": mcp_listed("wigolo"), "used_for": "crawl product site, web/news search, page diffs"},
+        "graph_engineering_skill": {"ok": skill("graph-engineering"), "used_for": "qualification graph pattern"},
+        "human_voice_skill": {"ok": skill("human-voice"), "used_for": "anti-AI-tell rules for the humanize pass"},
+        "last30days_engine": {"ok": (last30 / "skills" / "last30days" / "scripts").exists(),
+                              "used_for": "Reddit/HN pain language (installed in Phase 0C)"},
+        "docker": {"ok": shutil.which("docker") is not None, "used_for": "Qdrant server for mem0 (Phase 0C)"},
+        "apify_key": {"ok": secrets.status()["APIFY_API_TOKEN"] == "set", "used_for": "LinkedIn/X, people search"},
+        "snov_keys": {"ok": secrets.status()["SNOV_CLIENT_ID"] == "set"
+                      and secrets.status()["SNOV_CLIENT_SECRET"] == "set",
+                      "used_for": "email find/verify, sending"},
+        "firecrawl_key": {"ok": secrets.status()["FIRECRAWL_API_KEY"] == "set",
+                          "used_for": "optional fallback crawler"},
+    }
+
+
+@setup_app.command("status")
+def setup_status(product: str = typer.Option(None)) -> None:
+    """JSON checklist the /gtm-setup wizard reads to decide what to ask next. No secret values."""
+    out: dict = {"signing_keys": signing.keys_exist(), "secrets": secrets.status(),
+                 "secrets_file_mode_ok": secrets.file_mode_ok(), "products": []}
+    root = products_dir()
+    if root.exists():
+        out["products"] = sorted(p.name for p in root.iterdir() if (p / "product.yaml").exists())
+    if product:
+        slug = _slug(product)
+        missing = []
+        try:
+            cfg = config.load(slug)
+        except FileNotFoundError:
+            missing.append("product")
+            cfg = None
+        if cfg:
+            if not cfg.personas:
+                missing.append("personas (run /gtm-icp)")
+            if not cfg.icp.segments:
+                missing.append("icp segments (run /gtm-icp)")
+            if not cfg.voice.sender_name:
+                missing.append("voice.sender_name")
+            if not cfg.voice.postal_address:
+                missing.append("voice.postal_address (US law needs it before sending)")
+            if not cfg.sending.mailboxes:
+                missing.append("sending.mailboxes (Phase 0C: gtm mailbox add)")
+            clients_csv = product_config_dir(slug) / "clients.csv"
+            if not clients_csv.exists():
+                missing.append(f"clients.csv at {clients_csv}")
+        out["product"] = {"slug": slug, "missing": missing,
+                          "usage_profile": cfg.usage.profile if cfg else None,
+                          "geo": {k: v.status for k, v in cfg.geo_policy.items()} if cfg else None}
+    if not out["signing_keys"]:
+        out.setdefault("human_actions", []).append("run `bin/gtm keys init` in your own terminal")
+    if any(v == "missing" and secrets.KNOWN[k][0] == "required" for k, v in out["secrets"].items()):
+        out.setdefault("human_actions", []).append("run `bin/gtm secrets set` in your own terminal")
+    typer.echo(json.dumps(out, indent=2))
+
+
+@app.command()
+def doctor(product: str = typer.Option(None), tools: bool = typer.Option(True)) -> None:
+    """Health check. Global by default; --product adds per-product checks."""
+    checks: dict[str, dict] = {}
+    for d, label in ((data_dir(), "data_dir"), (config_dir(), "config_dir")):
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+            probe = d / ".write-test"
+            probe.write_text("x")
+            probe.unlink()
+            ok = not str(d.resolve()).startswith("/mnt/windows")
+            checks[label] = {"ok": ok, "path": str(d), "note": "" if ok else "must not be on the NTFS mount"}
+        except OSError as e:
+            checks[label] = {"ok": False, "path": str(d), "note": str(e)}
+    try:
+        ledger.open_ledger().close()
+        checks["ledger_db"] = {"ok": True, "path": str(ledger_db())}
+    except Exception as e:
+        checks["ledger_db"] = {"ok": False, "note": str(e)}
+    checks["signing_keys"] = {"ok": signing.keys_exist(), "note": "bin/gtm keys init (your terminal)"}
+    checks["secrets_file_mode"] = {"ok": secrets.file_mode_ok()}
+    if tools:
+        checks.update(_tool_checks())
+    if product:
+        slug = _slug(product)
+        try:
+            cfg = config.load(slug)
+            conn = store.open_state(slug)
+            catalog.seed(conn)
+            n = conn.execute("SELECT count(*) FROM signal_codes").fetchone()[0]
+            checks["product"] = {"ok": True, "slug": cfg.product.slug, "signal_codes": n}
+        except Exception as e:
+            checks["product"] = {"ok": False, "note": str(e)}
+    typer.echo(json.dumps(checks, indent=2))
+    hard = ("data_dir", "config_dir", "ledger_db", "secrets_file_mode", "claude_isolation", "product")
+    if any(checks[k]["ok"] is False for k in hard if k in checks):
+        raise typer.Exit(1)
+
+
+if __name__ == "__main__":
+    app()

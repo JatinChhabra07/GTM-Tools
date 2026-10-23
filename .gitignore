@@ -1,0 +1,19 @@
+# secrets & runtime data never live in the repo (see plan §1.6)
+.env
+*.env
+!.env.example
+products/*/clients.csv
+products/*/near_miss.csv
+products/*/knowledge/
+runs/
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+*.egg-info/
+
+# tool state
+.gstack/
+*-workspace/

@@ -1,0 +1,7 @@
+schema_version: "1.1"
+name: first-run-new-product
+expected_outcome: |
+  The wizard checks setup state with bin/gtm setup status before asking anything, creates the
+  product with bin/gtm product create (slug like acme-crm), asks the remaining questions one at a
+  time in plain language, tells the founder to run `bin/gtm keys init` and `bin/gtm secrets set`
+  in his own terminal, and never asks for an API key or PIN in chat.

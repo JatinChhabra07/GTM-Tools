@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(~/.config/gtm-tools/**)",
+      "Edit(~/.config/gtm-tools/**)",
+      "Write(~/.config/gtm-tools/**)",
+      "Edit(~/.local/share/gtm-tools/**)",
+      "Write(~/.local/share/gtm-tools/**)",
+      "Bash(bin/gtm keys:*)",
+      "Bash(bin/gtm secrets set:*)",
+      "Bash(bin/gtm review:*)",
+      "Bash(bin/gtm autosend:*)",
+      "Bash(bin/gtm sending:*)",
+      "Bash(bin/gtm forget:*)",
+      "Bash(bin/gtm mailbox add:*)",
+      "Bash(uv run gtm keys:*)",
+      "Bash(uv run gtm secrets set:*)",
+      "Bash(uv run gtm review:*)",
+      "Bash(uv run gtm autosend:*)",
+      "Bash(uv run gtm sending:*)",
+      "Bash(uv run gtm forget:*)",
+      "Bash(sqlite3:*)",
+      "Bash(cat ~/.config/gtm-tools:*)"
+    ]
+  }
+}

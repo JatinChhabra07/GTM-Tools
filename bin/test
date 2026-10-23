@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Runs the test suite with the same off-NTFS venv as bin/gtm.
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export UV_PROJECT_ENVIRONMENT="${UV_PROJECT_ENVIRONMENT:-$HOME/.local/share/gtm-tools/venv}"
+cd "$ROOT"
+exec uv run --quiet pytest "$@"
