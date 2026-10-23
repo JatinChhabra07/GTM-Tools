@@ -454,5 +454,9 @@ def doctor(product: str = typer.Option(None), tools: bool = typer.Option(True)) 
         raise typer.Exit(1)
 
 
+from gtm import cli_ops  # noqa: E402  (operational commands; registered last to keep this file readable)
+
+cli_ops.register(app)
+
 if __name__ == "__main__":
     app()

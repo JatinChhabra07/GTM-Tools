@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Cron entry point: bin/gtm-scheduled-run <product> <full|refresh|sync|noop|feedback>
+# Cron has an empty environment: set everything explicitly, export NO secrets (gtm reads its own
+# env file), and never let an API key move the isolated calls off the Claude subscription.
+set -uo pipefail
+PRODUCT="${1:?product}"
+MODE="${2:?mode}"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DATA="${GTM_DATA_DIR:-$HOME/.local/share/gtm-tools}"
+LOG_DIR="$DATA/$PRODUCT/cron"
+mkdir -p "$LOG_DIR" && chmod 700 "$LOG_DIR"
+LOG="$LOG_DIR/$(date +%Y%m%d)-$MODE.log"
+
+# the repo lives on the Windows disk: skip quietly if it isn't mounted
+if ! mountpoint -q /mnt/windows; then
+  echo "$(date -Is) /mnt/windows not mounted: skipped" >> "$LOG"; exit 0
+fi
+
+export HOME="${HOME:-/home/$(id -un)}"
+export NVM_DIR="$HOME/.nvm"
+# shellcheck disable=SC1091
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" >/dev/null 2>&1
+export PATH="$HOME/.local/bin:$PATH"
+export XDG_DATA_HOME="$HOME/.local/share"
+export UV_PROJECT_ENVIRONMENT="$HOME/.local/share/gtm-tools/venv"
+unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL CLAUDECODE CLAUDE_CODE_ENTRYPOINT
+
+if [ "$MODE" = "feedback" ]; then
+  CMD=(feedback --product "$PRODUCT")
+else
+  CMD=(run --product "$PRODUCT" --mode "$MODE")
+fi
+{
+  echo "=== $(date -Is) gtm ${CMD[*]}"
+  timeout 50m uv run --project "$ROOT" --quiet gtm "${CMD[@]}"
+  RC=$?
+  echo "=== exit $RC"
+} >> "$LOG" 2>&1
+RC=$(tail -n1 "$LOG" | sed -n 's/=== exit //p')
+if [ "${RC:-1}" != "0" ]; then
+  mkdir -p "$DATA/_global"
+  echo "$(date -Is) $PRODUCT $MODE exit ${RC:-?} (see $LOG)" >> "$DATA/_global/cron-failures.log"
+  command -v notify-send >/dev/null 2>&1 && \
+    DISPLAY="${DISPLAY:-:0}" notify-send "GTM-Tools: $PRODUCT $MODE failed" "See $LOG" 2>/dev/null || true
+fi
+exit "${RC:-1}"

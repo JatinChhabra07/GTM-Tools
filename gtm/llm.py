@@ -17,6 +17,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -268,6 +269,7 @@ class Session:
         self.pause_minutes = pause_minutes
         self.calls = 0
         self.fake = os.environ.get("GTM_FAKE") == "1"
+        self._lock = threading.Lock()  # reviewer calls run in parallel threads
 
     @property
     def remaining(self) -> int:
@@ -276,6 +278,10 @@ class Session:
     def _record(self, prompt_id: str, res: CallResult | None, outcome: str) -> None:
         if self.conn is None:
             return
+        with self._lock:
+            self._insert(prompt_id, res, outcome)
+
+    def _insert(self, prompt_id: str, res: CallResult | None, outcome: str) -> None:
         self.conn.execute(
             "INSERT INTO usage_events (run_id, prompt_id, model, input_tokens, output_tokens, "
             "cache_read_tokens, duration_ms, outcome, at) VALUES (?,?,?,?,?,?,?,?,?)",
@@ -283,10 +289,10 @@ class Session:
              res.output_tokens if res else None, res.cache_read_tokens if res else None,
              res.duration_ms if res else 0, outcome, now_iso()))
 
-    def _raw(self, prompt_id: str, prompt: str, payload: dict) -> CallResult:
+    def _raw(self, prompt_id: str, prompt: str, payload: dict, blocks: dict[str, str]) -> CallResult:
         if self.fake:
             from gtm import fake
-            return CallResult(text=json.dumps(fake.llm_response(prompt_id, payload)), model="fake")
+            return CallResult(text=json.dumps(fake.llm_response(prompt_id, payload, blocks)), model="fake")
         return call(prompt, model=self.model)
 
     def json(self, prompt_id: str, payload: dict, schema: type[BaseModel], *,
@@ -298,12 +304,13 @@ class Session:
             raise UsageLimit(f"isolated calls paused until {until} (usage limit)")
         feedback, invalid, outages = None, 0, 0
         while invalid < MAX_INVALID_ATTEMPTS:
-            if self.calls >= self.cap:
-                raise CallCapReached(f"llm_calls_per_run cap {self.cap} reached")
+            with self._lock:
+                if self.calls >= self.cap:
+                    raise CallCapReached(f"llm_calls_per_run cap {self.cap} reached")
+                self.calls += 1
             prompt = render_prompt(prompt_id, payload, schema, untrusted_blocks, feedback)
-            self.calls += 1
             try:
-                res = self._raw(prompt_id, prompt, payload)
+                res = self._raw(prompt_id, prompt, payload, untrusted_blocks or {})
             except UsageLimit:
                 self._record(prompt_id, None, "usage_limit")
                 pause_for(self.pause_minutes)

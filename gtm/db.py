@@ -12,7 +12,9 @@ from gtm.paths import ensure_private_dir
 def connect(path: Path) -> sqlite3.Connection:
     ensure_private_dir(path.parent)
     # isolation_level=None: we issue BEGIN/COMMIT ourselves (BEGIN IMMEDIATE where it matters)
-    conn = sqlite3.connect(path, timeout=10, isolation_level=None)
+    # check_same_thread=False: qualify runs reviewer calls in threads; writes are serialised by
+    # llm.Session's lock, and every other path is single-threaded
+    conn = sqlite3.connect(path, timeout=10, isolation_level=None, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=10000")
