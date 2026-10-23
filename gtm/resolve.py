@@ -57,6 +57,7 @@ def _resolve_posts(ctx) -> None:
         domain, evidence = known[r["employer"]]
         if evidence:
             accounts.ensure_account(ctx.conn, domain=domain, name=r["employer"], source="signal", evidence=evidence)
+        _record_social(ctx, r, domain, evidence)
         lk = None
         if r["resolvability"] == "named_person":
             lk = lead_key(ctx.slug, linkedin_url=r["author_handle"], name=r["author_name"], domain=domain)
@@ -74,6 +75,18 @@ def _resolve_posts(ctx) -> None:
                    observed_at=_posted_iso(r["posted_at"]), run_id=ctx.run_id)
         ctx.conn.execute("UPDATE posts SET account_domain = ?, lead_key = ? WHERE id = ?", (domain, lk, r["id"]))
         ctx.count("posts_resolved")
+
+
+def _record_social(ctx, post, domain: str, evidence: str | None) -> None:
+    """Engine attribution: the social engine found this company. A named person's post URL is
+    personal data, so it's attributed by the company's resolution evidence instead (erasure-safe)."""
+    from gtm import discovery
+    acct = ctx.conn.execute("SELECT resolution_evidence FROM accounts WHERE domain = ?", (domain,)).fetchone()
+    if not acct:
+        return
+    url = post["url"] if post["resolvability"] == "company_event" else (evidence or acct["resolution_evidence"])
+    discovery.record(ctx.conn, domain, "social", evidence_url=url,
+                     detail=f"{post['source']} post, {post['intent_code']}")
 
 
 def _posted_iso(posted: str | None) -> str | None:

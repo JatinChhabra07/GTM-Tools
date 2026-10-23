@@ -331,10 +331,32 @@ STATE_MIGRATIONS: list[str] = [
         PRIMARY KEY (domain, run_id)
     );
     """,
+    # discovery_hits: which engine found each company (plan §15, D4); a company may have several.
+    # CREATE only: existing accounts are attributed once by discovery.backfill (open_state).
+    """
+    CREATE TABLE discovery_hits (
+        domain TEXT NOT NULL,
+        engine TEXT NOT NULL CHECK (engine IN ('icp','lookalike','social','competitor','manual')),
+        detail TEXT,
+        evidence_url TEXT NOT NULL CHECK (evidence_url GLOB 'http://*' OR evidence_url GLOB 'https://*'),
+        first_seen_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL,
+        hits INTEGER NOT NULL DEFAULT 1 CHECK (hits >= 1),
+        PRIMARY KEY (domain, engine)
+    );
+    CREATE INDEX discovery_hits_engine ON discovery_hits (engine, first_seen_at);
+    """,
 ]
 
 
 def open_state(slug: str) -> sqlite3.Connection:
     conn = db.connect(state_db(slug))
+    before = conn.execute("PRAGMA user_version").fetchone()[0]
     db.migrate(conn, STATE_MIGRATIONS)
+    if before < _DISCOVERY_VERSION:  # the discovery_hits migration just ran: attribute older accounts once
+        from gtm import discovery
+        discovery.backfill(conn)
     return conn
+
+
+_DISCOVERY_VERSION = next(i for i, m in enumerate(STATE_MIGRATIONS, 1) if "CREATE TABLE discovery_hits" in m)

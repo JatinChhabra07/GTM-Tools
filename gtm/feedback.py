@@ -104,4 +104,23 @@ def propose(conn, led, slug: str) -> int:
             with path.open("a") as f:
                 f.write(json.dumps({"text": text, "at": now_iso()}) + "\n")
             made += 1
-    return made
+    return made + _propose_engine(conn, led, slug)
+
+
+def _propose_engine(conn, led, slug: str) -> int:
+    """One discovery engine clearly ahead (non-overlapping 95% ranges, past the same evidence bar):
+    suggest shifting effort towards it. Only a suggestion; nothing changes without the founder."""
+    from gtm.report import engine_funnel
+    ef = engine_funnel(conn, led, slug)
+    best = ef["leader"]
+    if not best or ef["engines"][best]["delivered"] < MIN_SENDS or ef["engines"][best]["positive"] < MIN_POSITIVE:
+        return 0
+    key = sha1(slug, "engine", best, str(ef["engines"][best]["delivered"] // 50))
+    if conn.execute("SELECT 1 FROM proposals WHERE body_json LIKE ?", (f'%"{key}"%',)).fetchone():
+        return 0
+    stats = {e: r for e, r in ef["engines"].items() if not r["too_few_to_tell"]}
+    conn.execute("INSERT INTO proposals (kind, body_json, at) VALUES ('engine', ?, ?)",
+                 (json.dumps({"engine": best, "stats": stats, "key": key,
+                              "note": f"companies found by {best} reply best; consider shifting effort towards it"}),
+                  now_iso()))
+    return 1

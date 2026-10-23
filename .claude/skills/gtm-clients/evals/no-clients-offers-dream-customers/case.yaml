@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: no-clients-offers-dream-customers
+expected_outcome: |
+  Says lookalike search is skipped without clients, offers to use 5-10 dream customers instead, writes them to dream_customers.csv (not clients.csv) and explains they seed the search but are not treated as proof of who buys.

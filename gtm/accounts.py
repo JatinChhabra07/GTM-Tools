@@ -13,8 +13,9 @@ import re
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import unquote
 
-from gtm import kb
+from gtm import discovery, kb
 from gtm import observations as obs
 from gtm.config import ProductConfig
 from gtm.gates import country_code
@@ -28,7 +29,10 @@ JUNK_DOMAINS = ("linkedin.com", "facebook.com", "instagram.com", "twitter.com", 
                 "github.com", "producthunt.com", "tracxn.com", "zoominfo.com", "apollo.io", "owler.com",
                 "ambitionbox.com", "justdial.com", "indiamart.com", "amazon.com", "amazon.in", "flipkart.com",
                 "shopify.com", "apps.shopify.com", "google.com", "bing.com", "quora.com", "forbes.com",
-                "techcrunch.com", "inc42.com", "yourstory.com", "economictimes.indiatimes.com", "gov.in")
+                "techcrunch.com", "inc42.com", "yourstory.com", "economictimes.indiatimes.com", "gov.in",
+                # affiliate redirectors that list articles link through (seen live in D4)
+                "shareasale.com", "kqzyfj.com", "anrdoezrs.net", "jdoqocy.com", "tkqlhce.com", "dpbolvw.net",
+                "sjv.io", "pxf.io", "awin1.com", "linksynergy.com", "skimresources.com", "amzn.to")
 WEBMAIL = ("gmail.com", "yahoo.com", "outlook.com", "hotmail.com", "proton.me", "icloud.com")
 
 
@@ -92,7 +96,30 @@ def import_clients(conn: sqlite3.Connection, slug: str) -> dict:
             if d and ensure_account(conn, domain=d, name=row.get("company") or d, source="tal",
                                     evidence=f"https://{d}/", status="near_miss"):
                 out["near_miss"] += 1
+    # dream customers: real targets (engine 'manual') AND lookalike search seeds; never clients, so
+    # they change neither the lookalike weight nor the client fingerprint the pre-score compares with
+    for row in dream_customers(slug):
+        d = row["domain"]
+        if conn.execute("SELECT 1 FROM clients WHERE domain = ?", (d,)).fetchone():
+            continue
+        ensure_account(conn, domain=d, name=row["company"], source="tal", evidence=f"https://{d}/")
+        if discovery.record(conn, d, "manual", evidence_url=f"https://{d}/", detail="dream customer"):
+            out["dream_customers"] = out.get("dream_customers", 0) + 1
     return out
+
+
+def dream_customers(slug: str) -> list[dict]:
+    """products/<slug>/dream_customers.csv (company,domain): companies the founder would love as
+    customers. A startup without clients names these; they seed the lookalike searches."""
+    path = product_config_dir(slug) / "dream_customers.csv"
+    if not path.exists():
+        return []
+    out: dict[str, dict] = {}
+    for row in _read_csv(path):
+        d = domain_of(row.get("domain", ""))
+        if d and not is_junk(d):
+            out.setdefault(d, {"domain": d, "company": row.get("company") or d})
+    return list(out.values())
 
 
 def http_client():
@@ -319,7 +346,8 @@ def list_entries(list_url: str, list_title: str | None) -> list[dict]:
     out: dict[str, dict] = {}
     pairs = [(name, url) for name, url in _MD_LINK.findall(md)]
     pairs += [(None, u) for u in page.get("links") or [] if isinstance(u, str)]
-    pairs += [(None, f"https://{d.lower()}/") for d in _BARE_DOMAIN.findall(md)]
+    # decoded first: in a tracking link "...?u=https%3A%2F%2Fwww.brand.com" the raw text reads "2Fwww.brand.com"
+    pairs += [(None, f"https://{d.lower()}/") for d in _BARE_DOMAIN.findall(unquote(md))]
     for name, url in pairs:
         d = domain_of(url)
         if not d or d == host or d.endswith("." + host) or is_junk(d) or d in out:
@@ -331,53 +359,96 @@ def list_entries(list_url: str, list_title: str | None) -> list[dict]:
     return list(out.values())
 
 
-def candidates_from_search(llm_session, cfg: ProductConfig, queries: list[str], *, competitors: list[str]) -> list[dict]:
-    """wigolo search -> isolated classification -> [{domain, name, evidence}] (company sites only).
+def candidates_from_search(llm_session, cfg: ProductConfig, queries: list[str] | list[tuple[str, str]], *,
+                           competitors: list[str]) -> list[dict]:
+    """wigolo search -> isolated classification -> [{domain, name, evidence, hits}] (company sites only).
 
-    Generic searches mostly return LISTS of companies (top-N articles, directories, "sites using
-    Shopify"), not company homepages, so lists are mined too: the companies' own links on the page
-    are classified the same way, with the list page as evidence."""
+    `queries` are (engine, query) pairs (a bare string is an ICP query). Searches are batched per
+    engine, so every candidate knows which engine and queries found it: `hits` holds one
+    {engine, evidence, detail} per engine. Generic searches mostly return LISTS of companies (top-N
+    articles, directories, "sites using Shopify"), not company homepages, so lists are mined too:
+    the companies' own links on the page are classified the same way, with the list page as
+    evidence, and they inherit the engine(s) of the queries that surfaced the list."""
+    from itertools import groupby, zip_longest
+
     from gtm.sources import wigolo
     found: dict[str, dict] = {}
-    lists: dict[str, str | None] = {}
+    lists: dict[str, dict] = {}  # list url -> {title, via: {engine: queries}}
+    tagged = [q if isinstance(q, tuple) else ("icp", q) for q in queries]
 
-    def accept(out, entries, evidence_for):
+    def accept(out, entries, evidence_for, via: dict[str, str]):
         valid = {e["url"] for e in entries}
         for c in (out.companies if out else []):
             if c.url not in valid:
                 continue
-            if c.is_company_list and c.url not in lists and len(lists) < MAX_LISTS * 2:
-                lists[c.url] = next((e.get("title") for e in entries if e["url"] == c.url), None)
+            if c.is_company_list and (c.url in lists or len(lists) < MAX_LISTS * 2):
+                title = next((e.get("title") for e in entries if e["url"] == c.url), None)
+                lst = lists.setdefault(c.url, {"title": title, "via": {}})
+                for engine, detail in via.items():
+                    lst["via"].setdefault(engine, detail)
             if not c.is_company_site:
                 continue
             d = domain_of(c.url)  # the result's own host: the model can't invent a domain here
             if d and not is_junk(d):
                 name = c.name if c.name and not looks_like_url(c.name) else d
-                found.setdefault(d, {"domain": d, "name": name[:120], "evidence": evidence_for(c.url)})
+                ev = evidence_for(c.url)
+                cand = found.setdefault(d, {"domain": d, "name": name[:120], "evidence": ev, "hits": []})
+                seen = {h["engine"] for h in cand["hits"]}
+                cand["hits"] += [{"engine": e, "evidence": ev, "detail": det} for e, det in via.items() if e not in seen]
 
-    for i in range(0, len(queries), 3):
-        try:
-            res = wigolo.search(queries[i:i + 3], max_results=10)
-        except Exception:
-            continue
-        results = [r for r in (res.get("results", []) if isinstance(res, dict) else []) if r.get("url")]
-        if results and llm_session.remaining > 0:
-            accept(_classify(llm_session, cfg, competitors, results), results, lambda u: u)
-    for list_url, title in list(lists.items())[:MAX_LISTS]:
-        if llm_session.remaining <= 0:
+    for engine, group in groupby(tagged, key=lambda q: q[0]):
+        qs = [q for _, q in group]
+        for i in range(0, len(qs), 3):
+            batch = qs[i:i + 3]
+            try:
+                res = wigolo.search(batch, max_results=10)
+            except Exception:
+                continue
+            results = [r for r in (res.get("results", []) if isinstance(res, dict) else []) if r.get("url")]
+            if results and llm_session.remaining > 0:
+                accept(_classify(llm_session, cfg, competitors, results), results, lambda u: u,
+                       {engine: "search: " + " | ".join(batch)})
+    # engines take turns, so the first engine's lists can't use up every slot; an unreadable list
+    # costs no slot (its fetch is free, only the classification call counts)
+    by_engine: dict[str, list] = {}
+    for item in lists.items():
+        by_engine.setdefault(next(iter(item[1]["via"])), []).append(item)
+    mined = 0
+    for list_url, lst in [x for turn in zip_longest(*by_engine.values()) for x in turn if x]:
+        if mined >= MAX_LISTS or llm_session.remaining <= 0:
             break
         try:
-            entries = list_entries(list_url, title)
+            entries = list_entries(list_url, lst["title"])
         except Exception:
             continue
         if entries:
-            accept(_classify(llm_session, cfg, competitors, entries), entries, lambda u, src=list_url: src)
+            mined += 1
+            accept(_classify(llm_session, cfg, competitors, entries), entries, lambda u, src=list_url: src,
+                   {e: f"list {list_url} (from {det})"[:300] for e, det in lst["via"].items()})
     return list(found.values())
 
 
-def lookalike_queries(conn: sqlite3.Connection) -> list[str]:
-    names = [r[0] for r in conn.execute("SELECT name FROM clients ORDER BY contract_size DESC NULLS LAST LIMIT 6")]
+def record_hits(conn: sqlite3.Connection, candidate: dict) -> int:
+    """Attribute a search candidate to every engine that found it (the account must exist)."""
+    if not conn.execute("SELECT 1 FROM accounts WHERE domain = ?", (candidate["domain"],)).fetchone():
+        return 0
+    return sum(discovery.record(conn, candidate["domain"], h["engine"], evidence_url=h["evidence"], detail=h["detail"])
+               for h in candidate.get("hits") or [])
+
+
+def lookalike_seeds(conn: sqlite3.Connection, slug: str | None = None, limit: int = 6) -> list[str]:
+    """Clients first (biggest deals), then the founder's dream customers. Seeds only steer the
+    search; the lookalike WEIGHT in the pre-score stays driven by real clients alone."""
+    names = [r[0] for r in conn.execute("SELECT name FROM clients ORDER BY contract_size DESC NULLS LAST LIMIT ?",
+                                        (limit,))]
+    if slug:
+        names += [r["company"] for r in dream_customers(slug)]
+    return list(dict.fromkeys(names))[:limit]
+
+
+def lookalike_queries(conn: sqlite3.Connection, slug: str | None = None) -> list[str]:
+    """Empty with no clients and no dream customers: the lookalike engine is then skipped."""
     out = []
-    for n in names:
+    for n in lookalike_seeds(conn, slug):
         out += [f"companies like {n}", f"{n} competitors"]
     return out

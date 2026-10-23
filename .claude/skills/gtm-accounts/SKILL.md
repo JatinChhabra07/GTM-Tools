@@ -13,8 +13,8 @@ Start with `bin/gtm product show --product <slug>` and say which product you're 
 
 ## 1. Preconditions
 
-`bin/gtm config get --product <slug>` must show at least one ICP segment, or clients must be
-loaded. If neither: say so and route to `/gtm-icp` or `/gtm-clients`.
+`bin/gtm config get --product <slug>` must show at least one ICP segment, or clients (or dream
+customers) must be loaded. If neither: say so and route to `/gtm-icp` or `/gtm-clients`.
 
 ## 2. Build (free part first)
 
@@ -23,7 +23,10 @@ loaded. If neither: say so and route to `/gtm-icp` or `/gtm-clients`.
 It searches with ICP and lookalike queries (wigolo, free), lets an isolated Claude call classify
 which results are real company sites (directories, listicles and competitors are dropped),
 profiles each new company's website (free), pre-scores everything, and reports
-`without_linkedin_data` and `linkedin_data_estimate_usd`.
+`without_linkedin_data` and `linkedin_data_estimate_usd`. Every company remembers which kind of
+search found it (`icp` or `lookalike`; `/gtm-report` later shows which kind leads to replies).
+With no clients, a `notes` line says lookalike search was skipped: that's normal for a startup;
+offer dream customers via `/gtm-clients`.
 
 Then ask the founder (AskUserQuestion): buy LinkedIn company data for N companies at ~$X (better
 industry / size / country, so better pre-scores), or stay free? If yes:
@@ -37,7 +40,7 @@ the data yet, capped by `tal.build_budget_usd`.
 
 If the founder already has target companies, write them to a temp CSV `company,domain` and run
 `bin/gtm accounts import --product <slug> --file <csv>`. They're profiled and pre-scored like the
-rest.
+rest, and counted as found by the `manual` engine.
 
 ## 4. Review the list with the founder
 

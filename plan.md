@@ -996,3 +996,31 @@ time, and only an actor that returns the reviewer's company and has a clear pric
   - `tools install` ran live: wigolo was already available to Claude Code, so nothing was added.
 - **D2 and D3** are being built in parallel in separate worktrees, each with its own venv. D2 owns
   the next migration and the catalog; D3 adds neither.
+- **D4 done** (built in parallel with D2/D3; its migration is ordered after D2's at merge).
+  - **Engine attribution:** new table `discovery_hits` (one row per company and engine; a migration
+    that only creates it) and `gtm/discovery.py`.
+    - icp / lookalike: `accounts build` searches per engine; list-mined companies inherit the
+      engine of the query that surfaced the list.
+    - social: posts resolved in `resolve.py` and LinkedIn job posts.
+    - manual: `accounts import` and dream customers.
+    - competitor: a documented hook for D2 (`discovery.record(..., "competitor", ...)`).
+    - Older accounts are backfilled once (signal → social, tal → icp, detail `backfill`).
+    - No personal data: a named person's post is attributed by the company's resolution evidence.
+  - **Lookalikes for startups:** no clients → lookalike search is skipped with a note.
+    `products/<slug>/dream_customers.csv` (company,domain) seeds the lookalike queries and adds the
+    companies as targets (`manual`). They are never clients, so the lookalike weight and fingerprint
+    stay driven by real clients only. near_miss.csv didn't fit: it means "looked right, never bought".
+  - **Per-engine funnel:** `report --engines [--days N]` (a cohort by first find) shows found →
+    shortlisted → enriched → qualified → contacted → replied → positive with Wilson ranges.
+    - Below 50 delivered: "too few to tell". A winner is named only when two or more engines have
+      enough sends and the ranges don't overlap.
+    - It is also a short table in every run report.
+    - `feedback` adds an `engine` proposal past the usual evidence bar. It's a suggestion only.
+  - **Live keyless check** (real wigolo + `claude -p`, 8 calls per build): "companies like Allbirds"
+    lists were attributed to lookalike and "sustainable footwear" lists to icp. Five brands found
+    by both engines got one row each.
+  - **Two list-mining fixes found live:**
+    - Encoded tracking links had produced domains like `2fwww.brand.com`.
+    - Affiliate redirectors (shareasale, sjv.io, pxf.io…) are now junk.
+    - Engines now take turns for the list slots: before, the ICP lists used them all.
+  - 16 new tests (338 total).
