@@ -305,6 +305,18 @@ def llm_response(prompt_id: str, payload: dict, blocks: dict) -> dict:
         findings = payload.get("findings") or payload.get("open_questions") or {}
         return {"verdicts": [{"lead_key": k, "verdict": "drop" if any(f["verdict"] == "drop" for f in findings.get(k, []))
                               else "keep", "penalty": 0, "reason": ""} for k in payload["lead_keys"]]}
+    if prompt_id == "shortlist_worker":
+        return {"accounts": [{"domain": d, "assessment": "fits", "penalty": 0} for d in payload["domains"]]}
+    if prompt_id == "shortlist_review":
+        out = []
+        for d, sheet in _ids(blocks, "account:"):
+            bad = "panel-drop" in sheet.lower() and payload.get("lens") in ("risk", "truth_risk")
+            out.append({"domain": d, "verdict": "drop" if bad else "ok", "reason": "fake drop" if bad else ""})
+        return {"findings": out}
+    if prompt_id == "shortlist_synth":
+        f = payload["findings"]
+        return {"verdicts": [{"domain": d, "verdict": "drop" if any(x["verdict"] == "drop" for x in f.get(d, []))
+                              else "keep", "penalty": 0, "reason": ""} for d in payload["domains"]]}
     if prompt_id == "write_sequence":
         r = payload["recipient"]
         g = r["greeting"]

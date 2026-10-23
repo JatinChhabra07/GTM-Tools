@@ -103,6 +103,12 @@ class Usage(Strict):
         return USAGE_PROFILES[self.profile]
 
 
+class Discovery(Strict):
+    """Shortlist before paying (plan §15.2): the AI panel picks the best of the pool."""
+    shortlist_pool: int = Field(50, ge=5, le=100)
+    shortlist_cooldown_days: int = Field(14, ge=1, le=90)
+
+
 class Budgets(Strict):
     apify_usd_per_run: float = 3
     snov_credits_per_run: int = 60
@@ -162,6 +168,7 @@ class ProductConfig(Strict):
     signals: SignalInputs = SignalInputs()
     tal: Tal = Tal()
     scoring: Scoring = Scoring()
+    discovery: Discovery = Discovery()
     usage: Usage = Usage()
     budgets: Budgets = Budgets()
     schedule: Schedule = Schedule()

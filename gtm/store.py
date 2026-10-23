@@ -317,6 +317,20 @@ STATE_MIGRATIONS: list[str] = [
     ALTER TABLE accounts ADD COLUMN phone TEXT;
     ALTER TABLE accounts ADD COLUMN phone_evidence TEXT;
     """,
+    # v5: account shortlist verdicts (plan §15.2): only kept accounts reach paid enrichment
+    """
+    CREATE TABLE shortlist (
+        domain TEXT NOT NULL,
+        run_id TEXT NOT NULL,
+        verdict TEXT NOT NULL CHECK (verdict IN ('keep','drop','not_picked')),
+        prescore REAL,
+        final REAL,
+        reason TEXT,
+        findings_json TEXT NOT NULL DEFAULT '[]',
+        at TEXT NOT NULL,
+        PRIMARY KEY (domain, run_id)
+    );
+    """,
 ]
 
 

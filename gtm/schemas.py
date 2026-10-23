@@ -109,6 +109,41 @@ class SynthOut(Out):
     verdicts: list[Verdict]
 
 
+# ---------------------------------------------------------------- account shortlist (before paying)
+
+class AccountAssessment(Out):
+    domain: str
+    assessment: str = ""
+    concerns: list[str] = Field(default_factory=list)
+    penalty: int = Field(0, ge=-40, le=0)
+
+
+class ShortlistWorkerOut(Out):
+    accounts: list[AccountAssessment]
+
+
+class AccountFinding(Out):
+    domain: str
+    verdict: Literal["ok", "lower", "drop"]
+    penalty: int = Field(0, ge=-40, le=0)
+    reason: str = ""
+
+
+class ShortlistReviewOut(Out):
+    findings: list[AccountFinding]
+
+
+class AccountVerdict(Out):
+    domain: str
+    verdict: Literal["keep", "drop"]
+    penalty: int = Field(0, ge=-40, le=0)
+    reason: str = ""
+
+
+class ShortlistSynthOut(Out):
+    verdicts: list[AccountVerdict]
+
+
 # ---------------------------------------------------------------- writing
 
 class StepOut(Out):

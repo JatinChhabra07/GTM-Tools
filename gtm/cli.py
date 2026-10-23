@@ -201,10 +201,17 @@ def llm_ping() -> None:
 
 @tools_app.command("install")
 def tools_install() -> None:
-    """Install everything the automation runs on: last30days (pinned), Qdrant, the embedder."""
+    """Install everything the automation runs on: last30days (pinned), Qdrant, the embedder, wigolo."""
     from gtm import kb
-    from gtm.sources import last30days
+    from gtm.paths import REPO_ROOT
+    from gtm.sources import last30days, wigolo
     out: dict = {}
+    try:
+        out["wigolo"] = {**wigolo.warm(),
+                         "claude_code": wigolo.register_project(REPO_ROOT / ".mcp.json",
+                                                                already_listed=mcp_listed("wigolo"))}
+    except Exception as e:  # npx missing or network: report, don't crash the installer
+        out["wigolo"] = {"error": str(e)[:300]}
     try:
         out["last30days"] = last30days.install()
     except last30days.Last30Error as e:
@@ -343,6 +350,17 @@ def _qdrant_ready() -> bool:
     return kb.qdrant_ready()
 
 
+def mcp_listed(name: str) -> bool | None:
+    exe = shutil.which("claude")
+    if not exe:
+        return None
+    try:
+        out = subprocess.run([exe, "mcp", "list"], capture_output=True, text=True, timeout=90).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return any(line.split(":")[0].strip().endswith(name) for line in out.splitlines())
+
+
 def _tool_checks() -> dict[str, dict]:
     """Every tool/skill the plan relies on (CLAUDE.md 'Tool & skill map')."""
     home = Path.home()
@@ -354,16 +372,6 @@ def _tool_checks() -> dict[str, dict]:
         if (skills / name / "SKILL.md").exists():
             return True
         return plugins.exists() and any(plugins.glob(f"**/skills/{name}/SKILL.md"))
-
-    def mcp_listed(name: str) -> bool | None:
-        exe = shutil.which("claude")
-        if not exe:
-            return None
-        try:
-            out = subprocess.run([exe, "mcp", "list"], capture_output=True, text=True, timeout=90).stdout
-        except (OSError, subprocess.TimeoutExpired):
-            return None
-        return any(line.split(":")[0].strip().endswith(name) for line in out.splitlines())
 
     from gtm.sources import last30days
     try:

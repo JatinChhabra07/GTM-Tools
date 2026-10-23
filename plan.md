@@ -53,7 +53,8 @@ See **§11**. Older versions are in `docs/`.
    2. drain outbox: approved + hash-matching + re-gated sequences → Snov (atomic claim)
    3. collect   triggers (TAL re-observation, jobs, news, site diffs)  + signals (social)
    4. resolve   explicit evidence only → accounts; pre-score; global ledger check
-   5. enrich    personas (Apify) → email pattern-first → Snov verify   [within daily cap]
+   5. shortlist account-level AI panel picks the best ≤ daily cap from ≤50 (§15.2)
+   5b enrich    personas (Apify) → email pattern-first → Snov verify   [shortlist only]
    6. qualify   graph in Python: worker → 4 lens reviewers → synth → gate (isolated calls)
    7. write     FACTS-only prompt → humanize → code validator → outbox (pending_review)
    8. report    funnel, cost, usage, failures
@@ -888,3 +889,96 @@ any India sends (`docs/compliance.md`).
 **Residual (accepted, see §6.2 threat model):** the Snov list/campaign link and the name fields sent
 to Snov are not inside the signed hash, and anything running as the founder's Linux user with a shell
 can still tamper with local state. The signatures stop forged approvals, not a hostile local user.
+
+---
+
+## 15. Discovery v2 (agreed with the user 2026-10-23): build ONE phase per session
+
+**Model.** Four discovery engines fill one candidate pool. An AI review panel shortlists the pool
+**before any paid contact lookup**; Apify/Snov run only for the shortlist; the person is checked
+again after contacts are found; then write → review → send as before.
+
+```
+ E1 social intent ─┐
+ E2 competitors   ─┼─→ candidate pool (≤50, free score order) ─→ SHORTLIST panel (≤ daily quota, ~15)
+ E3 lookalikes    ─┤        └ dropped: not re-reviewed for 14 days unless a newer signal arrives
+ E4 ICP search    ─┘   ─→ Apify people + Snov email (paid, shortlist only) ─→ person check (qualify)
+                       ─→ write ─→ founder review (PIN) ─→ Snov
+ Anonymous intent posts (Reddit etc.) ─→ INTENT SHEET (post link + author profile) for manual follow-up
+```
+
+### 15.1 Engines
+- **E1 Social intent: LinkedIn, Reddit, X, Instagram, plus fallbacks.**
+  - Per product, a free/cheap **source test** measures how many intent posts each source yields
+    for that product's keywords; sources that yield nothing are proposed OFF in `/gtm-icp` (the
+    founder confirms). "X finds nothing for this product" is a normal outcome, not an error.
+  - **Fallback sources** when the four are thin: review sites, Hacker News, Quora, Indie Hackers
+    and niche forums found with wigolo search, job boards.
+  - A post whose author is identifiable (real name + employer) goes through the pipeline as today.
+    A post that **names the poster's company** makes that company an account (the decision maker is
+    found normally).
+  - **Intent sheet (user decision):** every intent post whose author can't be emailed (most Reddit
+    posts) is written to `~/.local/share/gtm-tools/<slug>/intent_sheet.csv` (opens in Google
+    Sheets/Excel): date, source, post URL, author profile URL, intent code, one-line summary,
+    company if named. It's for the founder's manual follow-up; nothing is sent to these people
+    automatically. `gtm sheet --product P` prints the path and the new rows.
+- **E2 Competitor engine (new).**
+  - **A, analysis:** per competitor (founder confirms the list in `/gtm-icp`): crawl their site
+    (features, pricing, positioning, who they claim to serve), read review sites (top complaints
+    and praise, with links), and watch pricing/feature pages with wigolo `diff`. The output is
+    `products/<slug>/knowledge/competitors/<name>.md` plus mem0 `competitor` facts (each with a
+    source URL). The writer may use a competitor fact only with its source; there are no
+    disparaging claims.
+  - **B, their clients → leads (user: "from everywhere we can"):** competitor logo walls, case
+    studies and testimonials (wigolo, free) · G2, Capterra and Trustpilot reviewers' companies
+    (Apify, cost estimate first; negative reviews rank highest) · LinkedIn/X posts saying "we use X"
+    or "leaving X" (Apify) · tech detection: a target's site loads the competitor's script (free,
+    in `profile.py`).
+  - New codes: `COMPETITOR_CUSTOMER` (firmographic, evidence URL) and `COMPETITOR_REVIEW_NEGATIVE`
+    (intent). Both are collected only once the founder confirms them.
+- **E3 Lookalikes:** built (`/gtm-clients`). Skipped automatically when there are no clients
+  (startups).
+- **E4 ICP search:** built (`/gtm-accounts`, list mining).
+
+### 15.2 Shortlist before paying (user decision: AI panel picks the top ~15)
+- A new run step `shortlist` (between `resolve` and `enrich`).
+  - The pool is up to `discovery.shortlist_pool` (default 50) accounts with a fresh signal, after
+    the free checks: prescore cutoff, not a client, not suppressed, navigation rules.
+  - It's ordered by the free ranking: intent first, then signal rank, then prescore.
+- **Account-level graph** (the same pattern as §4.3, run on companies):
+  - worker (1 call) → reviewers that try to REFUTE (lenses `icp_lookalike`, `signal_truth`,
+    `risk`; merged into 2 on max5x) → synth (1 call)
+  - about 4 isolated calls on max5x, 5 on max20x
+  - reviewers can only lower or drop
+- It keeps at most the daily enrich quota, ranked by prescore + penalty.
+- If the panel gives no usable answer (usage limit, call cap), the run **pays for nothing** and
+  notes why.
+- Dropped accounts are skipped for `discovery.shortlist_cooldown_days` (14) unless an observation
+  newer than the drop arrives.
+- Verdicts are stored in the `shortlist` table and shown in the run report (pool, kept, dropped).
+- The person-level `qualify` graph after enrichment is unchanged: it still checks the person, the
+  email and the risk.
+
+### 15.3 Auto-install
+`bin/gtm tools install` installs everything a run needs, with nothing manual:
+- last30days (pinned), Qdrant (docker), the embedding model
+- wigolo: warms the `npx -y wigolo` package cache and registers it for the project in `.mcp.json`
+  so the founder's Claude Code session has it
+- later phases add their own checks (Apify actors reachable, competitor sources)
+
+`/gtm-setup` runs it first.
+
+### 15.4 Phases (one per session, in this order)
+| phase | builds | exit criteria |
+|---|---|---|
+| **D1** | 15.2 shortlist step + 15.3 wigolo auto-install | fake world: pool > quota → only the shortlisted accounts reach Apify; a panel failure → no paid calls; cooldown honoured; resume skips a finished shortlist; all tests pass; one live keyless run |
+| **D2** | E2 competitor engine A + B: `gtm competitors analyze/clients`, codes, writer angles, a `/gtm-competitors` skill with evals | fake: brief written with sources; competitor clients become accounts with evidence; reviewer actors behind a cost estimate. Live: one real competitor analysed for free |
+| **D3** | E1 upgrade: source test per product, intent sheet, company-named posts → accounts, fallback sources | fake: an anonymous Reddit post lands in the sheet, never in leads; a source with no yield is proposed OFF; live last30days + wigolo forum search |
+| **D4** | Lookalike/ICP tidy-up + per-engine funnel in `/gtm-report` (which engine's leads replied) | report shows per-engine counts |
+
+**Apify actors for D2** (store search 2026-10-23; the final pick is made by a live check at build
+time, and only an actor that returns the reviewer's company and has a clear price qualifies):
+- G2: `factden/g2-reviews-scraper`, `zhorex/g2-reviews-scraper` (`reviewly/g2-reviews-scraper` is
+  deprecated)
+- Capterra: `imadjourney/…`, `kawsar/…`, `azzouzana/capterra-reviews-scraper`
+- Trustpilot: `data_xplorer/trustpilot-reviews-scraper`, `unfenced-group/trustpilot-scraper`

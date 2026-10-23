@@ -4,13 +4,14 @@
  2 drain     approved + signature-valid + hash-matching + re-gated sequences -> Snov
  3 collect   triggers (TAL accounts) + signals (social)
  4 resolve   explicit evidence only -> accounts; pre-score
- 5 enrich    personas -> email pattern-first -> verify (within the daily cap)
- 6 qualify   graph: worker -> lens reviewers -> synth -> gate
- 7 write     FACTS-only writer -> humanize -> validator -> pending_review
- 8 report
+ 5 shortlist account-level AI panel picks the best of the pool (<= daily cap); nothing else is paid for
+ 6 enrich    personas -> email pattern-first -> verify (shortlisted accounts only)
+ 7 qualify   graph: worker -> lens reviewers -> synth -> gate (the person)
+ 8 write     FACTS-only writer -> humanize -> validator -> pending_review
+ 9 report
 
 Resume (full/refresh only): the latest run of the same mode that is `running` (its process died:
-we hold the lock) or `failed` with attempt < 2, started in the last 24 h, is resumed. Steps 3-7 that
+we hold the lock) or `failed` with attempt < 2, started in the last 24 h, is resumed. Steps 3-8 that
 finished are skipped; steps 1-2 always re-run so a fresh reply sync precedes any push.
 """
 
@@ -33,7 +34,7 @@ from gtm.paths import ensure_private_dir, product_data_dir, runs_dir
 from gtm.util import new_run_id, now, now_iso, parse_iso
 
 ALWAYS = ("sync", "drain")
-PIPELINE = ("collect", "resolve", "enrich", "qualify", "write")
+PIPELINE = ("collect", "resolve", "shortlist", "enrich", "qualify", "write")
 MODES = ("full", "refresh", "sync", "noop")
 
 
@@ -161,12 +162,13 @@ def _resumable(conn: sqlite3.Connection, mode: str) -> sqlite3.Row | None:
 
 
 def _stages():
-    from gtm import enrich, handler, outbox, qualify, resolve, signals, triggers, writer
+    from gtm import enrich, handler, outbox, qualify, resolve, shortlist, signals, triggers, writer
     return {
         "sync": handler.sync,
         "drain": outbox.drain,
         "collect": lambda ctx: (triggers.collect(ctx), signals.collect(ctx)),
         "resolve": resolve.run,
+        "shortlist": shortlist.run,
         "enrich": enrich.run,
         "qualify": qualify.run,
         "write": writer.run,

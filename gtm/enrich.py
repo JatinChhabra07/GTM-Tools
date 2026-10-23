@@ -84,7 +84,9 @@ def llm_match(ctx, titles: list[str]) -> dict[str, str | None]:
 
 # ---------------------------------------------------------------- account selection
 
-def candidate_accounts(ctx, n: int) -> list[sqlite3.Row]:
+def candidate_pool(ctx, n: int) -> list[sqlite3.Row]:
+    """Free checks and free ranking only; the shortlist panel decides who is paid for (plan §15.2)."""
+    from gtm import shortlist
     rows = ctx.conn.execute(
         "SELECT a.* FROM accounts a WHERE a.status IN ('prequalified','new') AND a.prescore >= ? "
         "AND NOT EXISTS (SELECT 1 FROM leads l WHERE l.account_domain = a.domain "
@@ -95,6 +97,8 @@ def candidate_accounts(ctx, n: int) -> list[sqlite3.Row]:
         latest = obs.latest(ctx.conn, a["domain"], kinds=("intent", "trigger"))
         fresh = [o for o in latest if o.fresh]
         if not fresh or ledger.is_suppressed(ctx.ledger, domain=a["domain"]):
+            continue
+        if shortlist.cooling_down(ctx, a["domain"]):
             continue
         if ctx.conn.execute("SELECT 1 FROM clients WHERE domain = ?", (a["domain"],)).fetchone():
             continue
@@ -186,12 +190,11 @@ def _pick(ctx, people: list[dict]) -> tuple[dict, object, str] | None:
 # ---------------------------------------------------------------- run
 
 def run(ctx) -> None:
-    from gtm.run import enrich_quota
+    from gtm import shortlist
     if not ctx.cfg.personas:
         ctx.note("no personas yet: run /gtm-icp")
         return
-    n = enrich_quota(ctx)
-    accts = candidate_accounts(ctx, n)
+    accts = shortlist.kept(ctx)  # only accounts the panel picked are paid for
     ctx.count("enrich_accounts", len(accts))
     if not accts:
         return

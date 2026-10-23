@@ -91,3 +91,28 @@ def diff(old: dict, new: dict, **kw) -> dict:
 
 def crawl(url: str, **kw) -> dict:
     return call("crawl", {"url": url, **kw})
+
+
+# ---------------------------------------------------------------- install (plan §15.3)
+
+MCP_ENTRY = {"command": "npx", "args": ["-y", "wigolo"]}
+
+
+def warm() -> dict:
+    """Start wigolo once so `npx -y` downloads and caches it before the first scheduled run."""
+    page = fetch("https://example.com", max_content_chars=200)
+    return {"ok": bool(page.get("markdown"))}
+
+
+def register_project(mcp_json: Path, *, already_listed: bool | None) -> str:
+    """Make wigolo available to Claude Code in this project. Never overwrites another server or a
+    user-level wigolo the founder already has (that one may carry his own settings)."""
+    if already_listed:
+        return "already available"
+    data = json.loads(mcp_json.read_text()) if mcp_json.exists() else {}
+    servers = data.setdefault("mcpServers", {})
+    if "wigolo" in servers:
+        return "already in .mcp.json"
+    servers["wigolo"] = dict(MCP_ENTRY)
+    mcp_json.write_text(json.dumps(data, indent=2) + "\n")
+    return "added to .mcp.json (Claude Code asks once to approve it)"
