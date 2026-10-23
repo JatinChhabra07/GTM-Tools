@@ -982,3 +982,17 @@ time, and only an actor that returns the reviewer's company and has a clear pric
   deprecated)
 - Capterra: `imadjourney/…`, `kawsar/…`, `azzouzana/capterra-reviews-scraper`
 - Trustpilot: `data_xplorer/trustpilot-reviews-scraper`, `unfenced-group/trustpilot-scraper`
+
+### 15.5 Build status
+- **D1 done (commit c6d3ad5).** `gtm/shortlist.py`, run step `shortlist`, `shortlist` table
+  (migration v5), `discovery.shortlist_pool` / `shortlist_cooldown_days`, `tools install` warms
+  wigolo and registers it in `.mcp.json` only if Claude Code doesn't already have it. 8 new tests
+  (322 total).
+  - **Live check** (real `claude -p`, max5x lenses, 4 calls) on three accounts:
+    - kept: the D2C store with a fresh founder ask
+    - dropped: the reseller agency (anti-ICP)
+    - dropped: the account whose scraped text carried a prompt injection; the panel flagged it and
+      ignored it
+  - `tools install` ran live: wigolo was already available to Claude Code, so nothing was added.
+- **D2 and D3** are being built in parallel in separate worktrees, each with its own venv. D2 owns
+  the next migration and the catalog; D3 adds neither.
