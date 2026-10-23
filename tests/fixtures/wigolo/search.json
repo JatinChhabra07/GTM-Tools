@@ -1,0 +1,157 @@
+{
+ "results": [
+  {
+   "title": "Best Abandoned cart Apps For 2026 - Shopify App Store",
+   "url": "https://apps.shopify.com/categories/marketing-and-conversion-marketing-abandoned-cart",
+   "snippet": "Boost your Shopify store with apps for Abandoned cart. Discover the latest free and premium apps on the Shopify App Store.",
+   "relevance_score": 0.9419072510719904,
+   "evidence_score": {
+    "final": 0.9419072510719904,
+    "components": {
+     "base_rrf": 0.11147540983606558,
+     "context_cosine": 0,
+     "domain_quality": 1,
+     "lexical_alignment": 0.6,
+     "recency_boost": 1,
+     "engine_consensus": 1,
+     "rare_terms": 1.1,
+     "cross_encoder": 0.7676290042879617
+    },
+    "explanation": "base=0.111, domain=1.00, lex=0.60, engines=1, xenc=0.77"
+   },
+   "cached": true,
+   "cached_at": "2026-10-23 09:16:48"
+  },
+  {
+   "title": "Wa: WhatsApp Chat, WhatsApp AI - Recover abandoned carts and chat with ...",
+   "url": "https://apps.shopify.com/wava-abandoned-cart-recovery",
+   "snippet": "Automate WhatsApp marketing, customer chats, COD confirmations, and cash-on-delivery orders. WhatsApp Marketing & WhatsApp Chat helps merchants recover lost revenue by sending personalized WhatsApp Automation messages to customers who abandon their carts.",
+   "relevance_score": 0.7720641754423232,
+   "evidence_score": {
+    "final": 0.7720641754423232,
+    "components": {
+     "base_rrf": 0.036290322580645164,
+     "context_cosine": 0,
+     "domain_quality": 1,
+     "lexical_alignment": 0.4,
+     "recency_boost": 1,
+     "engine_consensus": 1,
+     "rare_terms": 1,
+     "cross_encoder": 0.9212455702313052
+    },
+    "explanation": "base=0.036, domain=1.00, lex=0.40, engines=1, xenc=0.92"
+   },
+   "fetch_failed": "stage_timeout",
+   "content_from_snippet": true,
+   "cached": true,
+   "cached_at": "2026-10-23 09:16:48"
+  },
+  {
+   "title": "11 Best Shopify Abandoned Cart Apps in 2026 (Ranked & Compared) - Retainful",
+   "url": "https://www.retainful.com/blog/best-shopify-abandoned-cart-apps",
+   "snippet": "Shopify abandoned cart app is the only tool you need to recover lost sales through cart abandonment rate reduction. The apps help you recover Shopify abandoned carts at checkouts and thus unlock the sales tied to them by sending reminders to the customers through emails, WhatsApp messages, push notifications, or SMS campaigns.",
+   "relevance_score": 0.7571765829280439,
+   "evidence_score": {
+    "final": 0.7571765829280439,
+    "components": {
+     "base_rrf": 0.01111111111111111,
+     "context_cosine": 0,
+     "domain_quality": 1,
+     "lexical_alignment": 1,
+     "recency_boost": 1,
+     "engine_consensus": 1,
+     "rare_terms": 1.2,
+     "cross_encoder": 1
+    },
+    "explanation": "base=0.011, domain=1.00, lex=1.00, engines=1, xenc=1.00"
+   },
+   "fetch_failed": "stage_timeout",
+   "content_from_snippet": true,
+   "cached": true,
+   "cached_at": "2026-10-23 09:16:48"
+  }
+ ],
+ "query": "shopify abandoned cart whatsapp tool",
+ "engines_used": [
+  "bing",
+  "duckduckgo"
+ ],
+ "total_time_ms": 6,
+ "response_time_ms": 6,
+ "search_time_ms": 0,
+ "fetch_time_ms": 0,
+ "query_understanding": {
+  "intent": "general",
+  "entities": [
+   "shopify"
+  ],
+  "date_hint": null,
+  "language": "en",
+  "is_brand_collision_prone": false,
+  "rewrites": [],
+  "compound_terms": []
+ },
+ "queries_executed": [
+  "shopify abandoned cart whatsapp tool"
+ ],
+ "evidence": [
+  {
+   "title": "11 Best Shopify Abandoned Cart Apps in 2026 (Ranked & Compared) - Retainful",
+   "url": "https://www.retainful.com/blog/best-shopify-abandoned-cart-apps",
+   "section_heading": null,
+   "excerpt": "Shopify abandoned cart app is the only tool you need to recover lost sales through cart abandonment rate reduction. The apps help you recover Shopify abandoned carts at checkouts and thus unlock the sales tied to them by sending reminders to the customers through emails, WhatsApp messages, push notifications, or SMS campaigns.",
+   "score": 9.332022666931152,
+   "citation_id": "e27b78d2894b",
+   "source_span": {
+    "start": 0,
+    "end": 328
+   }
+  },
+  {
+   "title": "Best Abandoned cart Apps For 2026 - Shopify App Store",
+   "url": "https://apps.shopify.com/categories/marketing-and-conversion-marketing-abandoned-cart",
+   "section_heading": "Bring customers back to finish what they started.",
+   "excerpt": "Abandoned cart recovery, AI agent & automations on WhatsApp",
+   "score": 3.5608086585998535,
+   "citation_id": "0f0e08a41f8e",
+   "source_span": {
+    "start": 683,
+    "end": 742
+   }
+  },
+  {
+   "title": "Best Abandoned cart Apps For 2026 - Shopify App Store",
+   "url": "https://apps.shopify.com/categories/marketing-and-conversion-marketing-abandoned-cart",
+   "section_heading": "Bring customers back to finish what they started.",
+   "excerpt": "Send timely WhatsApp abandoned cart messages and order updates",
+   "score": 3.5011868476867676,
+   "citation_id": "1f01494fd086",
+   "source_span": {
+    "start": 1962,
+    "end": 2024
+   }
+  }
+ ],
+ "citations": [
+  {
+   "index": 1,
+   "url": "https://apps.shopify.com/categories/marketing-and-conversion-marketing-abandoned-cart",
+   "title": "Best Abandoned cart Apps For 2026 - Shopify App Store",
+   "snippet": "Boost your Shopify store with apps for Abandoned cart. Discover the latest free and premium apps on the Shopify App Store.",
+   "citation_id": "0f0e08a41f8e"
+  },
+  {
+   "index": 2,
+   "url": "https://apps.shopify.com/wava-abandoned-cart-recovery",
+   "title": "Wa: WhatsApp Chat, WhatsApp AI - Recover abandoned carts and chat with ...",
+   "snippet": "Automate WhatsApp marketing, customer chats, COD confirmations, and cash-on-delivery orders. WhatsApp Marketing & WhatsApp Chat helps merchants recover lost revenue by sending personalized WhatsApp Automation messages to customers who abandon their carts."
+  },
+  {
+   "index": 3,
+   "url": "https://www.retainful.com/blog/best-shopify-abandoned-cart-apps",
+   "title": "11 Best Shopify Abandoned Cart Apps in 2026 (Ranked & Compared) - Retainful",
+   "snippet": "Shopify abandoned cart app is the only tool you need to recover lost sales through cart abandonment rate reduction. The apps help you recover Shopify abandoned carts at checkouts and thus unlock the sales tied to them by sending reminders to the customers through emails, WhatsApp messages, push notifications, or SMS campaigns.",
+   "citation_id": "e27b78d2894b"
+  }
+ ]
+}

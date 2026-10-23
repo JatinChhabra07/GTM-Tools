@@ -1,0 +1,38 @@
+{
+ "url": "https://example.com",
+ "title": "Example Domain",
+ "markdown": "This domain is for use in documentation examples without needing permission. This is not a service; avoid relying on it for testing and monitoring purposes.\n\nهذا النطاق مُخصص للاستخدام في أمثلة التوثيق دون الحاجة إلى إذن. هذه ليست خدمة، يُرجى تجنب الاعتماد عليها لأغراض الاختبار والمراقبة.\n\n该域名仅用于文档示例，无需获得许可。这并非一项服务，请勿将其用于测试和监控目的。\n\nL’usage de ce domaine est réservé à des exemples de documentation, sans autorisation préalable. Il ne s’agit pas d’un service; son utilisation à des fins de test ou de surveillance est à éviter.\n\nДанный домен предназначен для использования в примерах документации без необходимости получения предварительного разрешения. Это не сервис; не рекомендуется его использование для тестирования и мониторинга.\n\n[... content truncated]",
+ "metadata": {
+  "title": "Example Domain",
+  "language": "en"
+ },
+ "links": [
+  "https://iana.org/help/example-domains"
+ ],
+ "images": [],
+ "cached": true,
+ "cached_at": "2026-10-23 09:16:54",
+ "fetch_method": "cache",
+ "content_hash": "a090a900df29b8f88aafc1bf04528678bfe659343e431842c375f5114e06b177",
+ "http_status": 200,
+ "content_completeness": {
+  "level": "full",
+  "reason": "content_verified",
+  "settled_by": "probe"
+ },
+ "evidence": [
+  {
+   "title": "Example Domain",
+   "url": "https://example.com",
+   "section_heading": null,
+   "excerpt": "This domain is for use in documentation examples without needing permission. This is not a service; avoid relying on it for testing and monitoring purposes.",
+   "score": 4.6216278076171875,
+   "citation_id": "a50ca27461d5",
+   "source_span": {
+    "start": 0,
+    "end": 156
+   }
+  }
+ ],
+ "response_time_ms": 90
+}

@@ -24,12 +24,14 @@ keys_app = typer.Typer(no_args_is_help=True, help="Approval signing keys (PIN)")
 setup_app = typer.Typer(no_args_is_help=True, help="What the setup wizard still needs")
 config_app = typer.Typer(no_args_is_help=True, help="Read/merge product.yaml")
 llm_app = typer.Typer(no_args_is_help=True, help="Isolated Claude calls")
+kb_app = typer.Typer(no_args_is_help=True, help="Per-product knowledge base (mem0)")
 app.add_typer(product_app, name="product")
 app.add_typer(secrets_app, name="secrets")
 app.add_typer(keys_app, name="keys")
 app.add_typer(setup_app, name="setup")
 app.add_typer(config_app, name="config")
 app.add_typer(llm_app, name="llm")
+app.add_typer(kb_app, name="kb")
 
 
 def _fail(msg: str, code: int = 1) -> None:
@@ -191,6 +193,81 @@ def llm_ping() -> None:
     except llm.LLMError as e:
         _fail(f"{type(e).__name__}: {e}")
     typer.echo(json.dumps({"result": res.text, "model": res.model, "duration_ms": res.duration_ms}))
+
+
+# ---------------------------------------------------------------- knowledge base
+
+def _kb():
+    from gtm import kb
+    return kb
+
+
+@kb_app.command("up")
+def kb_up() -> None:
+    """Start the local Qdrant server (docker) if it isn't running."""
+    k = _kb()
+    try:
+        typer.echo(json.dumps({"qdrant": k.ensure_qdrant(), "url": k.QDRANT_URL}))
+    except k.KBError as e:
+        _fail(str(e))
+
+
+@kb_app.command("add")
+def kb_add(product: str = typer.Option(...), category: str = typer.Option(...),
+           text: str = typer.Option(...), source_url: str = typer.Option(None)) -> None:
+    k = _kb()
+    try:
+        typer.echo(json.dumps(k.add(_slug(product), category, text, source_url=source_url)))
+    except k.KBError as e:
+        _fail(str(e))
+
+
+@kb_app.command("ingest")
+def kb_ingest(product: str = typer.Option(...),
+              file: Path = typer.Option(..., exists=True, help="JSON list or JSONL of {category,text,source_url}"),
+              keep: bool = typer.Option(True, help="also append to knowledge/extracted.jsonl for rebuilds")) -> None:
+    """Add facts extracted from the product site (authority=site)."""
+    k = _kb()
+    slug = _slug(product)
+    raw = file.read_text().strip()
+    items = json.loads(raw) if raw.startswith("[") else [json.loads(x) for x in raw.splitlines() if x.strip()]
+    res = k.ingest(slug, items)
+    if keep:
+        ex = k.extracted_path(slug)
+        ex.parent.mkdir(parents=True, exist_ok=True)
+        with ex.open("a") as f:
+            for item in items:
+                f.write(json.dumps(item, ensure_ascii=False) + "\n")
+    typer.echo(json.dumps(res, indent=2))
+
+
+@kb_app.command("search")
+def kb_search(product: str = typer.Option(...), query: str = typer.Option(...),
+              category: str = typer.Option(None), k: int = typer.Option(5)) -> None:
+    """Search one product's KB. pain_language text is redacted: it is scraped, untrusted text."""
+    hits = _kb().search(_slug(product), query, category=category, k=k)
+    for h in hits:
+        if h.get("category") == "pain_language":
+            h["text"] = "[redacted: scraped text, used only inside isolated calls]"
+        h.pop("dedupe", None)
+    typer.echo(json.dumps(hits, indent=2, ensure_ascii=False))
+
+
+@kb_app.command("reload-facts")
+def kb_reload_facts(product: str = typer.Option(...)) -> None:
+    """Re-load products/<slug>/facts.yaml: the only way human facts change."""
+    typer.echo(json.dumps(_kb().reload_facts(_slug(product))))
+
+
+@kb_app.command("rebuild")
+def kb_rebuild(product: str = typer.Option(...)) -> None:
+    """Wipe and rebuild this product's KB from knowledge/extracted.jsonl + facts.yaml + learnings.jsonl."""
+    typer.echo(json.dumps(_kb().rebuild(_slug(product)), indent=2))
+
+
+@kb_app.command("stats")
+def kb_stats(product: str = typer.Option(...)) -> None:
+    typer.echo(json.dumps(_kb().stats(_slug(product)), indent=2))
 
 
 # ---------------------------------------------------------------- setup + doctor

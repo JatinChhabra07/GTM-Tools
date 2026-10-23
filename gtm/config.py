@@ -90,6 +90,7 @@ USAGE_PROFILES = {
 class Usage(Strict):
     profile: Literal["max5x", "max20x"] = "max5x"  # safe default: the smaller plan
     usage_limit_pause_minutes: int = 60
+    model: str = "claude-sonnet-5-5"  # isolated calls; judgement quality matters more than speed
 
     def limits(self) -> dict:
         return USAGE_PROFILES[self.profile]
