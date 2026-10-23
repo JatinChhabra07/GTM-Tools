@@ -1011,3 +1011,12 @@ time, and only an actor that returns the reviewer's company and has a clear pric
     - **Next (D3b, after D2/D4 merge):** an opt-in paid author lookup with Apify
       `trudax/reddit-scraper-lite` (start URL = the post, which returns `username`; about $4 per
       1,000 items), capped per run, switched on by the founder in `/gtm-icp` after seeing the cost.
+- **D3b done (commit 8533194):** the Reddit author lookup.
+  - `signals.reddit_authors {enabled: false, max_per_run: 20}`; it runs only when Reddit is on and
+    the founder enabled it.
+  - It covers only sheet rows missing a profile, and each post is paid for once (a hash file).
+  - It honours `sheet --remove` erasures and skips with a note when there's no key.
+  - Actor inputs were checked against the actor's build schema (`maxPostCount` defaults to 10 and
+    must be set).
+  - `bin/gtm sheet` shows the missing count and the next run's estimate; `/gtm-icp` offers it.
+  - Not live-tested (no Apify key). 340 tests.
