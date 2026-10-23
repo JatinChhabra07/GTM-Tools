@@ -77,6 +77,10 @@ def write_run_report(ctx, status: str, reason: str | None) -> None:
         lines.append("")
     if drops:
         lines += ["## Drop reasons", "", *(f"- {sanitize_name(r['drop_reason'], 120)}: {r['n']}" for r in drops), ""]
+    if ctx.counts.get("intent_sheet_rows"):
+        from gtm.social import sheet_path
+        lines += [f"**{ctx.counts['intent_sheet_rows']} new row(s) in the intent sheet** (anonymous intent posts for "
+                  f"manual follow-up; nobody on it is emailed): {sheet_path(ctx.slug)}", ""]
     if ctx.notes:
         lines += ["## Notes", "", *(f"- {sanitize_name(n, 200)}" for n in ctx.notes), ""]
     acts = manual_actions(ctx.ledger, ctx.slug)
@@ -95,7 +99,8 @@ RETENTION_DAYS = 90
 
 
 def prune_old_files(slug: str, days: int = RETENTION_DAYS) -> int:
-    """Retention (plan §6.1): run folders and cron logs older than `days` are deleted."""
+    """Retention (plan §6.1): run folders and cron logs older than `days` are deleted; the intent
+    sheet stays, but its rows older than `days` are dropped. Returns files + rows removed."""
     import shutil
     import time
     from gtm.paths import product_data_dir
@@ -113,6 +118,8 @@ def prune_old_files(slug: str, days: int = RETENTION_DAYS) -> int:
             if f.suffix == ".log" and f.stat().st_mtime < cutoff:
                 f.unlink(missing_ok=True)
                 removed += 1
+    from gtm.social import prune_sheet
+    removed += prune_sheet(slug, days)
     return removed
 
 

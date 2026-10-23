@@ -78,8 +78,10 @@ def test_full_run_writes_sequences_and_nothing_is_sent(world):
     assert "brandly.example" in domains and "shopco.example" in domains
     assert "clientco.example" not in domains  # an existing client is never prospected
     assert fake.SENT == []  # nothing goes out without a signed approval
-    # the anonymous post never became an account or lead
-    assert conn.execute("SELECT count(*) FROM posts WHERE resolvability = 'anonymous' AND account_domain IS NOT NULL").fetchone()[0] == 0
+    # an anonymous post never becomes a lead, and an account only when the post names the company (§15.1 E1)
+    assert conn.execute("SELECT count(*) FROM posts WHERE resolvability = 'anonymous' AND lead_key IS NOT NULL").fetchone()[0] == 0
+    assert conn.execute("SELECT count(*) FROM posts WHERE resolvability = 'anonymous' AND account_domain IS NOT NULL "
+                        "AND employer IS NULL").fetchone()[0] == 0
     # one primary contact per account
     assert conn.execute("SELECT max(n) FROM (SELECT count(*) n FROM sequences GROUP BY "
                         "(SELECT account_domain FROM leads l WHERE l.lead_key = sequences.lead_key))").fetchone()[0] == 1

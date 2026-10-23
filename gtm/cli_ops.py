@@ -37,6 +37,7 @@ def register(app: typer.Typer) -> None:
     app.command("warmup")(warmup_cmd)
     app.command("forget")(forget_cmd)
     app.command("crawl")(crawl_cmd)
+    app.command("sheet")(sheet_cmd)
     for name, sub in (("mailbox", mailbox_app), ("snov", snov_app), ("sending", sending_app),
                       ("autosend", autosend_app), ("accounts", accounts_app), ("signals", signals_app),
                       ("schedule", schedule_app), ("manual", manual_app)):
@@ -477,6 +478,46 @@ def signals_confirm(product: str = typer.Option(...), codes: str = typer.Option(
 @signals_app.command("reject")
 def signals_reject(product: str = typer.Option(...), codes: str = typer.Option(...)) -> None:
     _set_status(product, codes.split(","), "rejected")
+
+
+@signals_app.command("test")
+def signals_test(product: str = typer.Option(...),
+                 confirm: bool = typer.Option(False, help="also run the paid Apify probes (LinkedIn, X, Instagram)")) -> None:
+    """Probe every social source for this product's keywords; recommend on/off per source (plan §15.1 E1).
+    Free sources always run; the paid probes print their estimate first and need --confirm."""
+    from gtm import social
+    from gtm.run import product_lock
+    cfg = config.load(product)
+    est = social.probe_estimate()
+    typer.echo(f"paid probes (Apify, tiny): estimate ${sum(est.values()):.2f} "
+               + ("- running" if confirm else "- not run (add --confirm)"))
+    with product_lock(product):
+        res = social.source_test(product, cfg, store.open_state(product), confirm=confirm)
+    typer.echo(f"keywords: {', '.join(res['keywords'])} | isolated calls: {res['isolated_calls']} | "
+               f"Apify spent: ${res['apify_usd']:.2f}\n")
+    typer.echo(social.format_table(res))
+    for n in res["notes"]:
+        typer.echo(f"note: {n}")
+    typer.echo(f"\nsaved: {res['path']}")
+
+
+def sheet_cmd(product: str = typer.Option(...), since: int = typer.Option(7, min=1, help="rows found in the last N days"),
+              remove: str = typer.Option(None, help="erasure request: drop rows with this post or profile URL for good")) -> None:
+    """The intent sheet: anonymous intent posts for YOUR manual follow-up. Nobody on it is emailed."""
+    from gtm import social
+    from gtm.util import sanitize_name
+    config.load(product)
+    if remove:
+        from gtm.run import product_lock
+        with product_lock(product):
+            typer.echo(f"removed {social.remove(product, remove)} row(s); this URL is never added again")
+        return
+    rows = social.recent_rows(product, since)
+    typer.echo(f"intent sheet: {social.sheet_path(product)}")
+    typer.echo(f"{len(rows)} row(s) found in the last {since} day(s) (open the CSV in Google Sheets or Excel)")
+    for r in rows:
+        typer.echo(" | ".join([r["date"], r["source"], r["intent_code"], r["post_url"], r["author_profile_url"] or "-",
+                               sanitize_name(r["company_if_named"]) or "-", sanitize_name(r["summary"], 160)]))
 
 
 # ---------------------------------------------------------------- schedule / manual / forget

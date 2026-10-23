@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: intent-sheet-not-emailed
+expected_outcome: |
+  Explains that anonymous Reddit posters are never emailed, points to the intent sheet (bin/gtm sheet) for manual follow-up, and does not try to find their emails or add them as leads.

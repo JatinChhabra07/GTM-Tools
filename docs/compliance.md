@@ -21,8 +21,20 @@ domain (`.in`, `.de`...) can only add a block, never unblock.
 - Phones: only the company's own published main line (a `tel:` link on its home, contact or about
   page) is stored, and it is only shown in the founder's review screen for **manual** follow-up.
   No personal mobile numbers are collected; nothing dials or texts (respect TRAI DND in India).
-- People who only appear in Reddit/Hacker News discussions are **never** leads; their text is used
-  in aggregate as "pain language" vocabulary inside isolated calls and is not shown in reports.
+- People who only appear in Reddit/Hacker News/forum/review-site discussions (and Instagram) are
+  **never** leads and are never emailed: no lead row can be created without a real name and an
+  employer written by the author, and these posts are stored without an author name. Their text is
+  used in aggregate as "pain language" vocabulary inside isolated calls and is not shown in reports.
+- **Intent sheet** (`<data dir>/<slug>/intent_sheet.csv`, file mode 0600): when such a post shows a
+  buying need, one row is kept for the founder's **manual** follow-up: date found, source, post URL,
+  the author's public profile URL only when the source itself gives a username (Hacker News; the
+  pinned last30days engine gives no Reddit author), the intent code, a one-line paraphrase written
+  by the isolated labeller (no quotes; dropped if it contains an email address or phone number) and
+  the company only if the post names it. Nothing is sent to anyone on it. Cells are neutralised
+  against spreadsheet formulas.
+- A post that names the poster's company may make that **company** a target account (evidence: the
+  post URL). The poster stays anonymous; the email goes to a decision maker found by normal
+  enrichment, and the writer may use the pain theme only, never where it was seen (`theme_only`).
 - The knowledge base (mem0) refuses text containing an email address or phone number.
 - Reports and Claude sessions see aggregates only: no email bodies, addresses or reply text.
 
@@ -35,9 +47,13 @@ domain (`.in`, `.de`...) can only add a block, never unblock.
   LinkedIn hashes to permanent suppression, logs the erasure, and blocks them in Snov. **Snov has no
   API to delete a prospect**, so a manual action ("delete from every Snov list") is queued and shown
   in `bin/gtm manual list` until done.
+- Intent sheet: `bin/gtm sheet --product <slug> --remove <post or profile URL>` deletes the matching
+  rows and stores only a hash of the URL so the row is never added again.
 
 ## Retention
 - Run folders and cron logs: deleted after 90 days (daily feedback pass).
+- Intent sheet rows: dropped 90 days after the date they were found (same daily pass); the file
+  itself is kept.
 - Apify datasets are unnamed (Apify's own default expiry applies).
 - Suppression hashes and the erasure log are kept indefinitely (they exist to keep people out).
 
@@ -54,7 +70,9 @@ domain (`.in`, `.de`...) can only add a block, never unblock.
 LinkedIn, X and Instagram data comes through Apify actors that read public pages. Their terms of
 service restrict automated collection; the founder accepts that risk by enabling those signals in
 `/gtm-icp`. The system collects only what the confirmed signals need, at low volume, and never logs
-in as the founder.
+in as the founder. The fallback sources (Quora, Indie Hackers, forums, review sites, job boards,
+Hacker News via web search) are read only as public search-result titles and snippets (wigolo), and
+only when the founder switches them on.
 
 ## Open items for legal review
 1. India: wording of the notice and the data-source statement; whether B2B work emails change the

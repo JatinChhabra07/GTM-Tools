@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: proposes-dropping-a-dead-source
+expected_outcome: |
+  Runs the free source test, proposes switching off a source that found nothing or no intent, asks before saving, saves signals.sources via config merge, and does not run the paid probes without asking.

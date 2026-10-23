@@ -84,19 +84,38 @@ def run(topic: str, *, sources: tuple[str, ...] = ("reddit", "hackernews"),
 
 
 def items(export: dict) -> list[dict]:
-    """Flatten to the fields we use. Text stays untrusted: only gtm/llm.py reads it."""
+    """Flatten to the fields we use. Text stays untrusted: only gtm/llm.py reads it.
+
+    Author facts (pinned v3.30.0, `--json-profile raw`): HN items carry the poster's username in
+    `author`; Reddit items carry none (the engine's Reddit normaliser sets author=None, and the
+    raw export drops None fields), so `author` is None for Reddit. The HN discussion page is
+    `metadata.hn_url` (`url` may be the linked article)."""
     out = []
     for source, rows in (export.get("items_by_source") or {}).items():
         for r in rows or []:
             if not r.get("url"):
                 continue
+            meta = r.get("metadata") or {}
             out.append({
                 "source": source,
                 "url": r["url"],
                 "title": (r.get("title") or "")[:300],
                 "text": (r.get("body") or r.get("snippet") or "")[:600],
+                "own_text": _own_text(r.get("body") or "", meta.get("top_comments"))[:600],
                 "posted_at": r.get("published_at"),
                 "container": r.get("container"),
                 "engagement": (r.get("engagement") or {}).get("score"),
+                "author": (str(r["author"]).strip() or None) if r.get("author") else None,
+                "discussion_url": meta.get("hn_url") if isinstance(meta.get("hn_url"), str) else None,
             })
     return out
+
+
+def _own_text(body: str, comments) -> str:
+    """The poster's own words: the engine appends the top 3 comments' excerpts (space-joined) to
+    `body`; those are other people's words, so they are cut before intent labelling."""
+    tail = " ".join(str(c.get("excerpt") or "").strip() for c in (comments or [])[:3] if isinstance(c, dict))
+    body = body.strip()
+    if tail.strip() and body.endswith(tail):
+        body = body[:-len(tail)].rstrip()
+    return body

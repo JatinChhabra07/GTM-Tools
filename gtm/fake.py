@@ -339,3 +339,70 @@ def llm_response(prompt_id: str, payload: dict, blocks: dict) -> dict:
     if prompt_id == "draft_reply":
         return {"body": "Thanks for getting back to me. Happy to share how it works. What does your setup look like today?"}
     raise KeyError(f"fake has no answer for prompt {prompt_id}")
+
+
+# ---------------------------------------------------------------- D3 social intent (plan §15.1 E1)
+# Appended, not merged into the sections above: community posts with author fields (the real engine
+# gives HN usernames and no Reddit author; a Reddit author is kept here to cover a future version),
+# a post that names its company, and forum search results for the fallback sources.
+
+
+def _recent(days: int) -> str:
+    from datetime import timedelta
+
+    from gtm.util import now
+    return (now() - timedelta(days=days)).date().isoformat()
+
+
+COMMUNITY: dict[str, list[dict]] = {
+    "reddit": [
+        {"url": "https://www.reddit.com/r/shopify/comments/abc123/cart_tool/", "title": "Need a cart tool",
+         "body": "Need a cart tool\nCan anyone recommend a cart recovery app? Ours is useless.",
+         "published_at": _recent(2), "author": "cartwoes_22"},
+        {"url": "https://www.reddit.com/r/ecommerce/comments/def456/brandly_carts/", "title": "Checkout leaks",
+         "body": "Checkout leaks\nWe at Brandly are looking for a better abandoned cart tool.",
+         "published_at": _recent(2)},
+    ],
+    "hackernews": [
+        {"url": "https://example.org/article", "title": "Ask HN: cart recovery?",
+         "body": "Ask HN: cart recovery?\nLooking for a cart recovery tool for a small store. Great question",
+         "published_at": _recent(4), "author": "hnbuyer",
+         "metadata": {"hn_url": "https://news.ycombinator.com/item?id=4242",
+                      "top_comments": [{"excerpt": "Great question"}]}},
+    ],
+}
+FORUM_RESULTS: dict[str, list[dict]] = {
+    "quora.com": [{"url": "https://www.quora.com/What-is-a-good-cart-recovery-tool", "title":
+                   "What is a good cart recovery tool?", "snippet": "Looking for a cart recovery tool for Shopify."}],
+    "indiehackers.com": [{"url": "https://www.indiehackers.com/post/carts-xyz", "title": "My carts",
+                          "snippet": "Sharing our cart recovery numbers this month."}],
+}
+_last30days_base = last30days
+_wigolo_base = wigolo
+_llm_response_base = llm_response
+
+
+def last30days(topic: str) -> dict:  # noqa: F811  (extends the fake above)
+    out = _last30days_base(topic)
+    for source, rows in COMMUNITY.items():
+        out["items_by_source"].setdefault(source, []).extend(dict(r) for r in rows)
+    return out
+
+
+def wigolo(name: str, args: dict):  # noqa: F811
+    if name == "search" and (args.get("include_domains") or args.get("exclude_domains")):
+        return {"results": [r for d in args.get("include_domains") or [] for r in FORUM_RESULTS.get(d, [])]}
+    return _wigolo_base(name, args)
+
+
+def llm_response(prompt_id: str, payload: dict, blocks: dict) -> dict:  # noqa: F811
+    out = _llm_response_base(prompt_id, payload, blocks)
+    if prompt_id == "label_posts":
+        texts = dict(_ids(blocks, "post:"))
+        for lab in out["labels"]:
+            named = re.search(r"\b[Ww]e at ([A-Z]\w+)", texts.get(lab["post_id"], ""))
+            if named and not lab["employer"]:
+                lab["employer"] = named.group(1)  # the post itself names the poster's company
+            if lab["code"]:
+                lab["summary"] = "wants a cart recovery tool"
+    return out
