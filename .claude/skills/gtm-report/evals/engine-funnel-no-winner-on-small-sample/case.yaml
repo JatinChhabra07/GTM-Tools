@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: engine-funnel-no-winner-on-small-sample
+expected_outcome: |
+  Reads report --engines, explains per engine how many companies became contacted leads and replies, says the samples are too small to name a winning engine, and changes nothing about targeting.

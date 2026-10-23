@@ -1042,3 +1042,49 @@ time, and only an actor that returns the reviewer's company and has a clear pric
     must be set).
   - `bin/gtm sheet` shows the missing count and the next run's estimate; `/gtm-icp` offers it.
   - Not live-tested (no Apify key). 340 tests.
+- **D4 done** (built in parallel with D2/D3; its migration is ordered after D2's at merge).
+  - **Engine attribution:** new table `discovery_hits` (one row per company and engine; a migration
+    that only creates it) and `gtm/discovery.py`.
+    - icp / lookalike: `accounts build` searches per engine; list-mined companies inherit the
+      engine of the query that surfaced the list.
+    - social: posts resolved in `resolve.py` and LinkedIn job posts.
+    - manual: `accounts import` and dream customers.
+    - competitor: a documented hook for D2 (`discovery.record(..., "competitor", ...)`).
+    - Older accounts are backfilled once (signal → social, tal → icp, detail `backfill`).
+    - No personal data: a named person's post is attributed by the company's resolution evidence.
+  - **Lookalikes for startups:** no clients → lookalike search is skipped with a note.
+    `products/<slug>/dream_customers.csv` (company,domain) seeds the lookalike queries and adds the
+    companies as targets (`manual`). They are never clients, so the lookalike weight and fingerprint
+    stay driven by real clients only. near_miss.csv didn't fit: it means "looked right, never bought".
+  - **Per-engine funnel:** `report --engines [--days N]` (a cohort by first find) shows found →
+    shortlisted → enriched → qualified → contacted → replied → positive with Wilson ranges.
+    - Below 50 delivered: "too few to tell". A winner is named only when two or more engines have
+      enough sends and the ranges don't overlap.
+    - It is also a short table in every run report.
+    - `feedback` adds an `engine` proposal past the usual evidence bar. It's a suggestion only.
+  - **Live keyless check** (real wigolo + `claude -p`, 8 calls per build): "companies like Allbirds"
+    lists were attributed to lookalike and "sustainable footwear" lists to icp. Five brands found
+    by both engines got one row each.
+  - **Two list-mining fixes found live:**
+    - Encoded tracking links had produced domains like `2fwww.brand.com`.
+    - Affiliate redirectors (shareasale, sjv.io, pxf.io…) are now junk.
+    - Engines now take turns for the list slots: before, the ICP lists used them all.
+  - 16 new tests (338 total).
+- **D2 done (merged from b214cd9 + 7c1e3d6).** Competitor engine: `bin/gtm competitors
+  list|analyze|clients`, `/gtm-competitors`, migration v6 (accounts.source gains 'competitor';
+  the table is rebuilt with foreign keys off), codes `COMPETITOR_CUSTOMER` / `COMPETITOR_REVIEW_NEGATIVE`.
+  - **Finding:** no G2/Capterra/Trustpilot actor returns the reviewer's company (G2 and Capterra
+    give only role, industry and size; Trustpilot reviewers are consumers). Paid reviews mostly feed
+    sourced complaint themes. A review becomes an account only when the text names the reviewer's
+    own company.
+  - **Actors:** `factden/g2-reviews-scraper`, `zen-studio/capterra-reviews-scraper`,
+    `data_xplorer/trustpilot-reviews-scraper` (docs/tools.md §2.4); none live-tested.
+  - **Live (free):** Omnisend brief with 18 sourced facts; the gorgias.com customer pages gave 6
+    real accounts.
+  - **User decision (2026-10-23):** a competitor customer is emailed only once it ALSO shows a fresh
+    intent or trigger signal (`COMPETITOR_CUSTOMER` stays firmographic: it raises the score, it
+    doesn't open the door by itself).
+- **Merge of D2 + D3 + D3b + D4 (2026-10-23):**
+  - Migrations in order: v5 shortlist, v6 accounts rebuild, v7 discovery_hits.
+  - `competitors.record_customer` now records the `competitor` engine hit.
+  - 369 tests pass.

@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
 
-from gtm import accounts, kb
+from gtm import accounts, discovery, kb
 from gtm import observations as obs
 from gtm.config import ProductConfig
 from gtm.paths import product_config_dir
@@ -548,6 +548,7 @@ def record_customer(conn, cfg: ProductConfig, *, competitor: str, domain: str, n
     created = accounts.ensure_account(conn, domain=d, name=name, source="competitor", evidence=account_evidence)
     if not conn.execute("SELECT 1 FROM accounts WHERE domain = ?", (d,)).fetchone():
         return False, False
+    discovery.record(conn, d, "competitor", evidence_url=evidence, detail=f"{competitor}: {collector}")
     rec = obs.record(conn, account_domain=d, signal_code="COMPETITOR_CUSTOMER", collector=collector,
                      evidence_url=evidence, confidence=confidence, value_text=competitor, run_id=run_id)
     return created, rec is not None

@@ -197,9 +197,10 @@ def _record_job(ctx, job: dict, keyword: str) -> None:
     title = (job.get("title") or "").strip()[:150]
     if not domain or not link.startswith("http") or not title:
         return
-    from gtm import accounts
+    from gtm import accounts, discovery
     accounts.ensure_account(ctx.conn, domain=domain, name=job.get("companyName") or domain, source="signal",
                             evidence=link, linkedin_url=job.get("companyLinkedinUrl"))
+    discovery.record(ctx.conn, domain, "social", evidence_url=link, detail=f"job post: {keyword}")
     obs.record(ctx.conn, account_domain=domain, signal_code="HIRING_ROLE", collector="apify_jobs",
                evidence_url=link, confidence=0.85, value_text=title, run_id=ctx.run_id)
     obs.record(ctx.conn, account_domain=domain, signal_code="HIRING_FOR_PROBLEM", collector="apify_jobs",

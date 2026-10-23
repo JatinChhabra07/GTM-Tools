@@ -121,10 +121,15 @@ def report_cmd(product: str = typer.Option(...), run: str = typer.Option(None, h
                outcomes: bool = typer.Option(False, help="reply-rate metrics with confidence intervals"),
                proposals: bool = typer.Option(False, help="open learning proposals from reply data"),
                close: int = typer.Option(None, help="with --proposals: mark this proposal id handled"),
-               accepted: bool = typer.Option(True, help="with --close: accepted (default) or --no-accepted")) -> None:
+               accepted: bool = typer.Option(True, help="with --close: accepted (default) or --no-accepted"),
+               engines: bool = typer.Option(False, help="funnel per discovery engine (icp, lookalike, social, ...)"),
+               days: int = typer.Option(None, min=1, help="with --engines: only companies found in the last N days")) -> None:
     """The latest run report (aggregates only, safe to show in a Claude session)."""
     from gtm import report
     conn = store.open_state(product)
+    if engines:
+        _echo(report.engine_funnel(conn, ledger.open_ledger(), product, days=days))
+        return
     if proposals:
         if close is not None:
             conn.execute("UPDATE proposals SET status = ? WHERE id = ?", ("accepted" if accepted else "rejected", close))
@@ -360,6 +365,11 @@ def accounts_clients(product: str = typer.Option(...), estimate: bool = typer.Op
         conn = store.open_state(product)
         res = accounts.import_clients(conn, product)
         domains = [r[0] for r in conn.execute("SELECT domain FROM accounts WHERE status IN ('client','near_miss')")]
+        dream = [r["domain"] for r in accounts.dream_customers(product)]
+        domains += [d for d in dream if d not in domains]  # profiled for free like the rest (never paid here)
+        if not conn.execute("SELECT 1 FROM clients LIMIT 1").fetchone():
+            res["note"] = ("no clients yet: lookalike search uses your dream customers as seeds" if dream else
+                           "no clients yet: lookalike search is skipped. Name 5-10 dream customers instead")
         unpaid = [r[0] for r in conn.execute("SELECT domain FROM accounts WHERE status IN ('client','near_miss') "
                                              "AND linkedin_company_checked_at IS NULL")]
         cost = apify.estimate("company", len(unpaid))
@@ -390,18 +400,24 @@ def accounts_build(product: str = typer.Option(...), estimate: bool = typer.Opti
     with product_lock(product):
         conn = store.open_state(product)
         session = llm.Session(conn, run_id=f"tal-{now_iso()[:10]}", cap=12, model=cfg.usage.model)
-        queries = accounts.icp_queries(cfg) + accounts.lookalike_queries(conn)
-        if not queries:
-            _fail("no ICP segments or clients yet: run /gtm-icp and /gtm-clients first")
+        icp_q, look_q = accounts.icp_queries(cfg), accounts.lookalike_queries(conn, product)
+        if not icp_q and not look_q:
+            _fail("no ICP segments, clients or dream customers yet: run /gtm-icp and /gtm-clients first")
+        queries = [("icp", q) for q in icp_q] + [("lookalike", q) for q in look_q]
         found = accounts.candidates_from_search(session, cfg, queries, competitors=cfg.signals.competitors)
-        new = []
+        new, hits = [], 0
         for c in found:
-            if len(new) >= max_new or conn.execute("SELECT count(*) FROM accounts").fetchone()[0] >= cfg.tal.max_accounts:
-                break
-            if accounts.ensure_account(conn, domain=c["domain"], name=c["name"], source="tal", evidence=c["evidence"]):
+            room = (len(new) < max_new
+                    and conn.execute("SELECT count(*) FROM accounts").fetchone()[0] < cfg.tal.max_accounts)
+            if room and accounts.ensure_account(conn, domain=c["domain"], name=c["name"], source="tal",
+                                                evidence=c["evidence"]):
                 new.append(c["domain"])
-        out = {"queries": len(queries), "candidates": len(found), "new_accounts": len(new),
-               "isolated_calls": session.calls}
+            hits += accounts.record_hits(conn, c)  # known accounts found again still count for the engine
+        out = {"queries": {"icp": len(icp_q), "lookalike": len(look_q)}, "candidates": len(found),
+               "new_accounts": len(new), "engine_hits": hits, "isolated_calls": session.calls}
+        if not look_q:
+            out["notes"] = ["lookalike search skipped: no clients yet. Name 5-10 dream customers in /gtm-clients "
+                            "to use as lookalike seeds."]
         out["profiled"] = accounts.profile_accounts(conn, cfg, new)
         # the paid part covers every target account still without LinkedIn data, not just this call's new ones
         pending = [r[0] for r in conn.execute(
@@ -421,12 +437,15 @@ def accounts_build(product: str = typer.Option(...), estimate: bool = typer.Opti
 @accounts_app.command("import")
 def accounts_import(product: str = typer.Option(...), file: Path = typer.Option(..., exists=True,
                     help="CSV with company,domain: target accounts you already know")) -> None:
-    from gtm import accounts
+    from gtm import accounts, discovery
+    from gtm.util import domain_of
     conn = store.open_state(product)
     n = 0
     for row in accounts._read_csv(file):
-        d = row.get("domain", "")
+        d = domain_of(row.get("domain", ""))
         n += accounts.ensure_account(conn, domain=d, name=row.get("company") or d, source="tal", evidence=f"https://{d}/")
+        if d and conn.execute("SELECT 1 FROM accounts WHERE domain = ?", (d,)).fetchone():
+            discovery.record(conn, d, "manual", evidence_url=f"https://{d}/", detail=f"imported from {file.name}")
     accounts.profile_accounts(conn, config.load(product), [r[0] for r in conn.execute(
         "SELECT domain FROM accounts WHERE profile_checked_at IS NULL")])
     _echo({"imported": n, "prescore": accounts.rescore_accounts(conn, config.load(product))})

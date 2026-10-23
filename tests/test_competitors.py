@@ -117,6 +117,8 @@ def test_logo_wall_companies_become_accounts_with_evidence(world):
     assert [(r["account_domain"], r["evidence_url"]) for r in tech] == [("logoshop.example", "https://logoshop.example/")]
     latest = observations.latest(conn, "logoshop.example", kinds=("firmographic",))
     assert sum(o.signal_code == "COMPETITOR_CUSTOMER" for o in latest) == 1  # one competitor, one current fact
+    hits = {r["domain"]: r for r in conn.execute("SELECT * FROM discovery_hits WHERE engine = 'competitor'")}
+    assert set(hits) == set(accts) and all(h["detail"].startswith("RivalCart: ") for h in hits.values())  # D4 funnel
 
 
 def test_unconfirmed_codes_collect_nothing(world):
