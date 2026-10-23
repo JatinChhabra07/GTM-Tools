@@ -22,6 +22,9 @@ def connect(path: Path) -> sqlite3.Connection:
     return conn
 
 
+FK_OFF = "-- foreign_keys=OFF"
+
+
 def migrate(conn: sqlite3.Connection, migrations: Sequence[str]) -> int:
     """Apply migrations[user_version:]. The list is append-only: never edit a shipped entry."""
     current = conn.execute("PRAGMA user_version").fetchone()[0]
@@ -30,16 +33,26 @@ def migrate(conn: sqlite3.Connection, migrations: Sequence[str]) -> int:
             f"database is at schema v{current}, code only knows v{len(migrations)}: update the code"
         )
     for version, sql in enumerate(migrations[current:], start=current + 1):
+        # SQLite's 12-step table rebuild (the only way to change a CHECK) needs foreign keys off,
+        # and that pragma is a no-op inside a transaction: such a migration starts with FK_OFF
+        fk_off = sql.lstrip().startswith(FK_OFF)
+        if fk_off:
+            conn.execute("PRAGMA foreign_keys=OFF")
         conn.execute("BEGIN IMMEDIATE")
         try:
             # statement by statement: executescript() would COMMIT and break the transaction
             for stmt in _split(sql):
                 conn.execute(stmt)
+            if fk_off and conn.execute("PRAGMA foreign_key_check").fetchone():
+                raise RuntimeError(f"migration v{version} would break a foreign key")
             conn.execute(f"PRAGMA user_version={version}")
             conn.execute("COMMIT")
         except Exception:
             conn.execute("ROLLBACK")
             raise
+        finally:
+            if fk_off:
+                conn.execute("PRAGMA foreign_keys=ON")
     return len(migrations)
 
 

@@ -23,15 +23,20 @@ ACTORS = {
     "tweets": "apidojo/tweet-scraper",
     "instagram": "apify/instagram-scraper",
     "google": "apify/google-search-scraper",
+    # competitor review sites (plan §15.1 E2; picks and reasons in docs/tools.md §2.4)
+    "g2": "factden/g2-reviews-scraper",
+    "capterra": "zen-studio/capterra-reviews-scraper",
+    "trustpilot": "data_xplorer/trustpilot-reviews-scraper",
 }
 
 # Worst-case USD per result on the FREE/BRONZE tier (docs/tools.md §2.1) + per-run start fees.
 # Used for --estimate and to size charge caps; Apify's own cap is the hard limit.
 PRICE_PER_ITEM = {"posts": 0.002, "company": 0.004, "employees": 0.008, "people": 0.004,
-                  "jobs": 0.002, "tweets": 0.0004, "instagram": 0.0027, "google": 0.0045}
-PRICE_PER_RUN = {"employees": 0.02, "people": 0.10}  # actor-start / first search page
+                  "jobs": 0.002, "tweets": 0.0004, "instagram": 0.0027, "google": 0.0045,
+                  "g2": 0.004, "capterra": 0.00199, "trustpilot": 0.00025}
+PRICE_PER_RUN = {"employees": 0.02, "people": 0.10, "g2": 0.005, "capterra": 0.005}  # actor-start / first search page
 MIN_CHARGE = {"posts": 0.01, "company": 0.004, "employees": 0.05, "people": 0.1, "jobs": 0.001,
-              "tweets": 0.0, "instagram": 0.0027, "google": 0.5}
+              "tweets": 0.0, "instagram": 0.0027, "google": 0.5, "g2": 0.01, "capterra": 0.01, "trustpilot": 0.001}
 TERMINAL = {"SUCCEEDED", "FAILED", "TIMED-OUT", "ABORTED"}
 
 
@@ -151,3 +156,41 @@ def tweets_input(*, handles: list[str] = (), terms: list[str] = (), since: str |
 def google_input(queries: list[str], *, country: str = "us", pages: int = 1) -> dict:
     return {"queries": "\n".join(queries), "maxPagesPerQuery": pages, "countryCode": country,
             "saveHtmlToKeyValueStore": False, "saveHtml": False, "includeIcons": False}
+
+
+def reviews_input(kind: str, url: str, *, limit: int) -> dict:
+    """Newest reviews of ONE product page on G2 / Capterra / Trustpilot (docs/tools.md §2.4)."""
+    if kind == "g2":
+        return {"mode": "reviews", "startUrls": [url], "maxReviewsPerProduct": limit, "sortReviews": "newest"}
+    if kind == "capterra":
+        return {"productUrl": url, "maxResults": limit, "sort": "MOST_RECENT"}
+    if kind == "trustpilot":
+        return {"urls": [{"url": url}], "maxReviews": limit, "sort": "recency"}
+    raise ValueError(f"no review actor for {kind!r}")
+
+
+def review_item(kind: str, it: dict) -> dict:
+    """One actor item -> {id, url, rating (1-5), date, title, text, reviewer}. None of these sites
+    publishes the reviewer's employer name (only role, industry and company size), so `reviewer`
+    is context for the isolated reader, never an identity."""
+    def first(*keys, src=it):
+        return next((src[k] for k in keys if src.get(k) not in (None, "", [])), None)
+    if kind == "g2":
+        r = {"title": first("reviewTitle"), "date": first("submittedAt"),
+             "text": "\n".join(str(it[k]) for k in ("pros", "cons", "problemsSolved") if it.get(k)) or first("markdownContent"),
+             "reviewer": ", ".join(str(it[k]) for k in ("reviewerRole", "reviewerIndustry", "companySize") if it.get(k)),
+             "rating": first("overallRating"), "url": first("reviewUrl"), "id": first("reviewId")}
+    elif kind == "capterra":
+        who = it.get("reviewer") if isinstance(it.get("reviewer"), dict) else {}
+        r = {"title": first("title"), "date": first("writtenOn"),
+             "text": "\n".join(str(it[k]) for k in ("generalComments", "prosText", "consText") if it.get(k)),
+             "reviewer": ", ".join(str(who[k]) for k in ("jobTitle", "industry", "companySize") if who.get(k)),
+             "rating": first("overallRating"), "url": first("reviewUrl"), "id": first("reviewId")}
+    else:
+        r = {"title": first("title"), "date": first("publishedDate"), "text": first("text"), "reviewer": "",
+             "rating": first("rating"), "url": first("reviewUrl"), "id": first("reviewId")}
+    try:
+        r["rating"] = float(r["rating"]) if r["rating"] is not None else None
+    except (TypeError, ValueError):
+        r["rating"] = None
+    return r

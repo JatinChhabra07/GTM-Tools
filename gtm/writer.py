@@ -12,7 +12,7 @@ import json
 import re
 import sqlite3
 
-from gtm import gates, kb, sequence, validate
+from gtm import competitors, gates, kb, sequence, validate
 from gtm import observations as obs
 from gtm.paths import REPO_ROOT
 from gtm.schemas import HumanizeOut, SequenceOut
@@ -26,7 +26,7 @@ SIGNAL_SECTION = {"ASKS_FOR_SOLUTION": "Stated intent", "COMPETITOR_PAIN": "Stat
                   "HIRING_FOR_PROBLEM": "Hiring", "HIRING_ROLE": "Hiring", "FUNDING": "Funding",
                   "LEADERSHIP_CHANGE": "Leadership change", "TECH_ADDED": "Tech change and tech present",
                   "TECH_REMOVED": "Tech change and tech present", "RUNNING_GOOGLE_ADS": "Ad spend",
-                  "RUNNING_META_ADS": "Ad spend"}
+                  "RUNNING_META_ADS": "Ad spend", "COMPETITOR_REVIEW_NEGATIVE": "Stated intent"}
 _MERGE = re.compile(r"\{\{[^}]*\}\}|\{[^}]*\}|\[[A-Z_]+\]|%[a-z_]+%")
 _META = ("here is", "here's", "sure", "i can't", "i cannot", "as an ai", "sorry")
 
@@ -93,6 +93,7 @@ def build_inputs(ctx, lead: sqlite3.Row, account: sqlite3.Row) -> dict | None:
     notes = [r["note"] for r in ctx.conn.execute(
         "SELECT note FROM writer_notes WHERE scope = 'campaign' OR (scope = 'contact' AND lead_key = ?) "
         "ORDER BY id DESC LIMIT 8", (lead["lead_key"],))]
+    comp = competitor_facts(ctx, account["domain"], q)
     proof = proofs[0] if proofs else None
     signal_texts = [primary.value_text or ""] + ([post["text_excerpt"]] if post else [])
     ok, _, notice = gates.geo_allowed(ctx.cfg, lead_country=lead["country"], hq_country=account["hq_country"],
@@ -113,18 +114,34 @@ def build_inputs(ctx, lead: sqlite3.Row, account: sqlite3.Row) -> dict | None:
             "playbook": {name: section(name, "writing.md") for name in WRITING_SECTIONS},
             "founder_notes": notes,
             "allowed_link": str(ctx.cfg.product.url),
+            **({"competitor_facts": [{"text": f["text"], "source_url": f["source_url"]} for f in comp]} if comp else {}),
         },
         "untrusted": {"signal_from_web": "\n".join(t for t in signal_texts if t)[:1200],
                       **({"pain_language_from_web": "\n".join(p["text"] for p in pains)} if pains else {})},
         "context_json": {
             "allowed_urls": [str(ctx.cfg.product.url)],
-            "proof_quotes": [p["text"] for p in proofs[:1]] + [f["text"] for f in facts],
-            "claimable_names": [r[0] for r in ctx.conn.execute("SELECT name FROM clients")] + list(ctx.cfg.signals.competitors),
+            "proof_quotes": [p["text"] for p in proofs[:1]] + [f["text"] for f in facts] + [f["text"] for f in comp],
+            "claimable_names": [r[0] for r in ctx.conn.execute("SELECT name FROM clients")] + list(ctx.cfg.signals.competitors)
+            + [n for n in competitors.known_names(ctx.slug) if n not in ctx.cfg.signals.competitors],
             "signal_texts": [t for t in signal_texts if t],
             "score_snapshot": json.loads(score["feature_snapshot_json"]) if score else {},
         },
         "score": score["total"] if score else None, "holdout": bool(score["holdout"]) if score else False,
     }
+
+
+def competitor_facts(ctx, domain: str, query: str, k: int = 3) -> list[dict]:
+    """Facts about the competitor THIS account uses (COMPETITOR_CUSTOMER / a negative review), and
+    only those carrying their source page: the validator then lets the email name that competitor
+    or quote its numbers only as the sourced fact says (they join `proof_quotes`)."""
+    names = {(o.value_text or "").split(" rated ")[0].strip().lower()
+             for o in obs.latest(ctx.conn, domain) if o.signal_code in ("COMPETITOR_CUSTOMER", "COMPETITOR_REVIEW_NEGATIVE")}
+    names.discard("")
+    if not names:
+        return []
+    hits = kb.search(ctx.slug, f"{query} {' '.join(names)}", category="competitor", k=k * 4)
+    return [h for h in hits if (h.get("competitor") or "").lower() in names
+            and str(h.get("source_url") or "").startswith("http")][:k]
 
 
 def write_for(ctx, lead: sqlite3.Row) -> str | None:

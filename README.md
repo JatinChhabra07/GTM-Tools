@@ -41,7 +41,7 @@ tells you where you are and walks you through each step. In order:
 | 4 | Claude Code | `/gtm-onboard`: reads your website into the knowledge base; you correct it |
 | 5 | Claude Code | `/gtm-icp`: who to target, who gets the email, which signals to watch |
 | 6 | Claude Code | `/gtm-clients`: your existing clients and lost deals (for lookalikes) |
-| 7 | Claude Code | `/gtm-accounts`: builds the list of target companies |
+| 7 | Claude Code | `/gtm-accounts`: builds the list of target companies (optional: `/gtm-competitors`, see below) |
 | 8 | **your terminal** | `bin/gtm mailbox add --id mb_1 --address you@your-sending-domain.com --warmup-start YYYY-MM-DD` |
 | 9 | Claude Code + Snov.io | `/gtm-setup` again: checks your sending domain, creates the Snov list, walks you through the 5-minute campaign setup in Snov.io, links it |
 | 10 | Claude Code | `/gtm-run`: a first test run; then `/gtm-setup` installs the daily schedule |
@@ -51,6 +51,16 @@ Never paste a key or your PIN into chat. If you do by accident, replace that key
 **Use a separate sending domain** (e.g. `getacme.com`, not your main domain) and let the mailbox
 warm up for about two weeks before real volume. The system starts at 5 emails a day and grows
 slowly on its own.
+
+## Competitors (optional)
+
+`/gtm-competitors` writes a short brief per competitor (what they sell, to whom, prices, what
+reviewers complain about), every line linked to the page it came from, into
+`products/<slug>/knowledge/competitors/`. It then adds companies that use a competitor as target
+accounts: free from the competitor's customer and case-study pages and from its script on a
+company's website; paid (G2/Capterra/Trustpilot reviews, LinkedIn/X posts) only after it shows
+the price and you say yes. The competitor itself is never emailed. Full runs re-check competitor
+pricing and customer pages once a week for free.
 
 ## Every day
 

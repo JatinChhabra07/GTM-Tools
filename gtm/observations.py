@@ -84,11 +84,14 @@ class Latest:
 # How "latest" works per code:
 # - SNAPSHOT codes are re-observed as a whole set by one profiler pass (their tech stack, team page):
 #   current = every row from the most recent pass, so a tool that disappeared stops counting.
-# - EVENT codes (intent, trigger, health) are distinct happenings: latest row per distinct value.
+# - EVENT codes (intent, trigger, health) are distinct happenings: latest row per distinct value
+#   (PER_VALUE_CODES too).
 # - everything else is single-valued: the latest row wins.
-SNAPSHOT_CODES = {"TECH_STACK", "TEAM_MEMBER_FOUND", "DECISION_MAKER_TITLE", "GENERIC_INBOX",
-                  "COMPETITOR_CUSTOMER"}
+SNAPSHOT_CODES = {"TECH_STACK", "TEAM_MEMBER_FOUND", "DECISION_MAKER_TITLE", "GENERIC_INBOX"}
 EVENT_KINDS = {"intent", "trigger", "health"}
+# Firmographic facts from several independent sources (a logo wall, a script on their site, a
+# post): latest row per distinct value, so one source can't hide another's finding.
+PER_VALUE_CODES = {"COMPETITOR_CUSTOMER"}
 
 _ROWS_SQL = """
 SELECT o.id, o.account_domain, o.signal_code, c.kind, o.value_num, o.value_text, o.confidence,
@@ -132,7 +135,7 @@ def latest(conn: sqlite3.Connection, account_domain: str, *, only_present: bool 
             if batch[code] != marker or (code, r["value_text"]) in seen:
                 continue
             seen.add((code, r["value_text"]))
-        elif r["kind"] in EVENT_KINDS:
+        elif r["kind"] in EVENT_KINDS or code in PER_VALUE_CODES:
             if (code, r["value_text"]) in seen:
                 continue
             seen.add((code, r["value_text"]))

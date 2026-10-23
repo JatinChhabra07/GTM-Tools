@@ -331,6 +331,38 @@ STATE_MIGRATIONS: list[str] = [
         PRIMARY KEY (domain, run_id)
     );
     """,
+    # v6: accounts found through a competitor (plan §15.1 E2): source 'competitor'. Changing a CHECK
+    # means rebuilding the table (SQLite's 12-step procedure, foreign keys off for the swap)
+    """
+    -- foreign_keys=OFF
+    CREATE TABLE accounts_v6 (
+        domain TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        industry TEXT,
+        size_band TEXT,
+        hq_country TEXT,
+        linkedin_url TEXT,
+        source TEXT NOT NULL CHECK (source IN ('tal','signal','competitor')),
+        tal_tier INTEGER,
+        resolution_evidence TEXT NOT NULL CHECK (resolution_evidence GLOB 'http*://*'),
+        lookalike_score REAL,
+        prescore REAL CHECK (prescore BETWEEN 0 AND 100),
+        profile_checked_at TEXT,
+        status TEXT NOT NULL DEFAULT 'new',
+        created_at TEXT,
+        linkedin_company_checked_at TEXT,
+        phone TEXT,
+        phone_evidence TEXT
+    );
+    INSERT INTO accounts_v6 (domain, name, industry, size_band, hq_country, linkedin_url, source, tal_tier,
+        resolution_evidence, lookalike_score, prescore, profile_checked_at, status, created_at,
+        linkedin_company_checked_at, phone, phone_evidence)
+    SELECT domain, name, industry, size_band, hq_country, linkedin_url, source, tal_tier,
+        resolution_evidence, lookalike_score, prescore, profile_checked_at, status, created_at,
+        linkedin_company_checked_at, phone, phone_evidence FROM accounts;
+    DROP TABLE accounts;
+    ALTER TABLE accounts_v6 RENAME TO accounts;
+    """,
 ]
 
 

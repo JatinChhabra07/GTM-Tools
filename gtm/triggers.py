@@ -137,10 +137,12 @@ def _reprofile(ctx) -> None:
         "prescore DESC LIMIT ?", (cutoff, PROFILES_PER_RUN.get(ctx.mode, 8))).fetchall()
     if not rows:
         return
+    from gtm.competitors import signatures
+    hosts = signatures(ctx.cfg)  # competitor script hosts: a hit = COMPETITOR_CUSTOMER (free)
     with http_client() as http:
         for r in rows:
             prof = profile.profile(r["domain"], client=http, hiring_keywords=ctx.cfg.signals.hiring_keywords,
-                                   competitors=ctx.cfg.signals.competitors)
+                                   competitors=hosts)
             c = apply_profile(ctx.conn, prof, run_id=ctx.run_id)
             ctx.count("profiled")
             ctx.count("trigger_changes", c["changes"])

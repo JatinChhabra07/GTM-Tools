@@ -24,6 +24,12 @@ domain (`.in`, `.de`...) can only add a block, never unblock.
 - People who only appear in Reddit/Hacker News discussions are **never** leads; their text is used
   in aggregate as "pain language" vocabulary inside isolated calls and is not shown in reports.
 - The knowledge base (mem0) refuses text containing an email address or phone number.
+- Competitor data (`/gtm-competitors`): competitors' own public pages, and public review pages
+  (G2, Capterra, Trustpilot) read as pages or through Apify review actors after the founder
+  confirms the cost. Reviewer names are never stored: only aggregate complaint/praise themes
+  (linked to one review) and, when a review's text names the reviewer's own company, that
+  company as an account with the review URL as evidence. Competitor facts in emails must come
+  from a sourced fact and are never disparaging.
 - Reports and Claude sessions see aggregates only: no email bodies, addresses or reply text.
 
 ## Opt-out, suppression and erasure
@@ -51,8 +57,8 @@ domain (`.in`, `.de`...) can only add a block, never unblock.
 - 7-day bounce rate above 3% pauses the mailbox automatically.
 
 ## Platform terms
-LinkedIn, X and Instagram data comes through Apify actors that read public pages. Their terms of
-service restrict automated collection; the founder accepts that risk by enabling those signals in
+LinkedIn, X and Instagram data, and G2/Capterra/Trustpilot reviews, come through Apify actors that
+read public pages. Their terms of service restrict automated collection; the founder accepts that risk by enabling those signals in
 `/gtm-icp`. The system collects only what the confirmed signals need, at low volume, and never logs
 in as the founder.
 

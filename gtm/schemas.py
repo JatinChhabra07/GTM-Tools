@@ -74,6 +74,57 @@ class PersonaMatches(Out):
     matches: list[PersonaMatch]
 
 
+# ---------------------------------------------------------------- competitors (plan §15.1 E2)
+
+class CompetitorClaim(Out):
+    kind: Literal["positioning", "serves", "feature", "pricing", "complaint", "praise"]
+    text: str
+    source_url: str
+
+
+class CompetitorBrief(Out):
+    claims: list[CompetitorClaim] = Field(default_factory=list)
+
+
+class CustomerMention(Out):
+    entry: int                            # the ENTRY number in the page block
+    name: str = ""
+    is_company: bool = False
+    relation: Literal["customer", "partner", "integration", "investor", "press", "other"] = "other"
+
+
+class CustomerMentions(Out):
+    mentions: list[CustomerMention]
+
+
+class CompetitorPostLabel(Out):
+    post_id: str
+    competitor: str | None = None         # one of the input competitors, named in the post
+    relation: Literal["uses", "leaving", "complains"] | None = None
+    employer: str | None = None           # ONLY if the post/author text states it
+    drop_reason: str | None = None
+
+
+class CompetitorPostLabels(Out):
+    labels: list[CompetitorPostLabel]
+
+
+class ReviewTheme(Out):
+    kind: Literal["complaint", "praise"]
+    text: str
+    review_id: str
+
+
+class ReviewRead(Out):
+    review_id: str
+    employer: str | None = None           # ONLY when the review text names the reviewer's own company
+
+
+class ReviewReading(Out):
+    themes: list[ReviewTheme] = Field(default_factory=list)
+    reviews: list[ReviewRead] = Field(default_factory=list)
+
+
 # ---------------------------------------------------------------- qualification graph
 
 class WorkerLead(Out):

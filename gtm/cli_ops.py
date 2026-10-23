@@ -14,7 +14,7 @@ from pathlib import Path
 
 import typer
 
-from gtm import config, ledger, signing, store
+from gtm import catalog, config, ledger, signing, store
 from gtm.paths import runs_dir
 from gtm.util import now, now_iso, parse_iso
 
@@ -452,12 +452,14 @@ def accounts_calibrate(product: str = typer.Option(...)) -> None:
 @signals_app.command("list")
 def signals_list(product: str = typer.Option(...)) -> None:
     conn = store.open_state(product)
+    catalog.seed(conn)  # codes added after the product was created show up as `proposed`
     _echo([dict(r) for r in conn.execute("SELECT code, status, kind, system, cost_class, cost_note, meaning, "
                                          "freshness_days FROM signal_codes ORDER BY kind, rank")])
 
 
 def _set_status(product: str, codes: list[str], status: str) -> None:
     conn = store.open_state(product)
+    catalog.seed(conn)
     done, refused = [], []
     for c in codes:
         try:

@@ -44,7 +44,8 @@ industry if it's not a buyer).
 **d. Where to listen** (all optional; each is a search input, not a signal by itself):
 - `linkedin.keywords`: up to 8 phrases a buyer writes **when they have the problem**
   ("cart abandonment", "looking for a CRM", "alternative to X"). Not product category names.
-- `competitors`: up to 4 names. Posts complaining about them become `COMPETITOR_PAIN`.
+- `competitors`: up to 4 names or (better) website domains. Posts complaining about them become
+  `COMPETITOR_PAIN`; `/gtm-competitors` turns each into a sourced brief and finds companies using it.
 - `hiring_keywords`: up to 5 job titles whose work the product does or helps ("CRO specialist").
 - `x.named_accounts`: X handles worth watching (industry voices, communities). Needs X data via
   Apify; skip unless the founder knows their buyers are active on X.
@@ -62,6 +63,9 @@ industry if it's not a buyer).
   `TECH_REMOVED`, `RUNNING_GOOGLE_ADS`, `RUNNING_META_ADS` (their own site, free).
 - *Firmographic* (needed for scoring; recommend all): `INDUSTRY`, `SIZE_BAND`, `HQ_COUNTRY`,
   `TECH_STACK`, `SITE_PAGE_COUNT`.
+- *Competitor* (only if competitors are listed; details in `/gtm-competitors`):
+  `COMPETITOR_CUSTOMER` (free: named on a competitor's customers page or loads its script),
+  `COMPETITOR_REVIEW_NEGATIVE` (paid: a low competitor review that names the reviewer's company).
 Say plainly which cost money (the `cost_class`/`cost_note` columns) and that every run is capped by
 the per-run budget in the config (default $3 Apify, 60 Snov credits). An email only goes out when a
 fresh intent or trigger exists for that company, so confirm at least one intent or trigger code.

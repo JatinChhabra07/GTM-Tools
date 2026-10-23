@@ -6,7 +6,7 @@ and never edits config files by hand. All phases are built; work now is fixes an
 
 ## Founder-facing skills (`.claude/skills/`, each with `evals/`)
 `/gtm` (front door, routes) · `/gtm-setup` · `/gtm-onboard` · `/gtm-icp` · `/gtm-clients` ·
-`/gtm-accounts` · `/gtm-run` · `/gtm-report` · `/gtm-doctor`. Change a skill with **skill-creator**
+`/gtm-accounts` · `/gtm-competitors` · `/gtm-run` · `/gtm-report` · `/gtm-doctor`. Change a skill with **skill-creator**
 and keep its evals passing (`claude plugin eval .` from the skill dir: real, billed runs).
 
 ## Commands
