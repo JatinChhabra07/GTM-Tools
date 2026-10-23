@@ -867,3 +867,24 @@ any India sends (`docs/compliance.md`).
   no personal numbers, nothing automated.
 - **Skill evals are written, not yet run**: they're real, billed model runs; run them with
   `claude plugin eval .` from each skill directory.
+
+### Independent send-safety review (2026-10-23), all fixed with regression tests (`tests/test_send_safety.py`)
+- **C1 geo fallback:** an unrecognised lead location silently used the company's HQ (an EU lead at a
+  US company was allowed). Now the person's location, when present, must be recognised or the lead
+  is blocked; EU/EEA country names (also in their own languages), common cities and US states added.
+- **C2 short sequences:** an edit could drop email 3 and still be signed; the Snov campaign would
+  then send an empty step 3 without the footer. The validator now requires exactly 3 emails.
+- **C3 stale Snov fields:** `updateContact=false` left a returning prospect's old `gtm_body_*`
+  in Snov. Now `true`.
+- **M1 kill switch / bounce brake:** a raw database update could lift them. The kill switch now needs
+  a verified resume signature (a trigger stamps every pause); bounce brakes are counted inside the
+  mailbox signature, so only re-signing with `mailbox add` (PIN) un-pauses (before, nothing could).
+- **M2 forget:** suppression is written first, so a failed purge can't leave the person sendable.
+- **M3/M4 auto-send:** guardrails are re-checked on every drain and auto-send switches itself off;
+  eligibility only counts signature-verified approvals; policy approvals never cover edited content.
+- Minor: sending window compares real times ("9:00" works); Snov reply paging reads until an empty
+  page instead of assuming 100 per page.
+
+**Residual (accepted, see §6.2 threat model):** the Snov list/campaign link and the name fields sent
+to Snov are not inside the signed hash, and anything running as the founder's Linux user with a shell
+can still tamper with local state. The signatures stop forged approvals, not a hostile local user.

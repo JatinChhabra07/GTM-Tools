@@ -194,13 +194,18 @@ def pain_language(ctx) -> None:
     topics = [t for t in pl.get("queries", []) if t][:2] or [ctx.cfg.product.name + " alternatives"]
     from gtm.sources import last30days
     texts = []
+    ok = False
     for t in topics:
         try:
             export = last30days.run(t, subreddits=pl.get("subreddits") or None)
             texts += [f"{i['title']}\n{i['text']}" for i in last30days.items(export)[:15]]
+            ok = True
+        except last30days.Last30Error as e:  # our own message (never scraped text): safe to show
+            ctx.note(f"last30days failed for one topic: {str(e)[:160]}")
         except Exception as e:
             ctx.note(f"last30days failed for one topic: {type(e).__name__}")
-    _watermark(ctx, "last30days")
+    if ok:  # only a successful pass waits a week; a failure is retried next full run
+        _watermark(ctx, "last30days")
     if not texts or ctx.llm.remaining < 12:
         return
     out = ctx.llm.json("extract_pain", {"product": ctx.cfg.product.name, "category": _category(ctx)},

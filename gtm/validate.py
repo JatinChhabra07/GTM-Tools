@@ -232,9 +232,10 @@ def validate_sequence(steps: list[Step], ctx: Context, *,
 
 def _check_shape(steps: list[Step]) -> list[Violation]:
     numbers = [s.step for s in steps]
-    if not steps or numbers != list(range(1, len(steps) + 1)) or len(steps) > len(WORD_CAPS):
+    if numbers != list(range(1, len(WORD_CAPS) + 1)):
+        # the Snov campaign always sends 3 steps from gtm_body_1..3: a missing step would go out empty
         return [Violation("sequence_shape", None,
-                          f"Steps must be numbered 1..{len(WORD_CAPS)} in order; got {numbers}.")]
+                          f"A sequence has exactly {len(WORD_CAPS)} emails numbered 1..{len(WORD_CAPS)}; got {numbers}.")]
     return []
 
 

@@ -105,24 +105,20 @@ def forget(email: str) -> dict:
     email = email.strip().lower()
     led = ledger.open_ledger()
     result = {"products": {}}
+    h = ledger.email_hash(email)
+    # suppression first: if any purge below fails, the person is still never contacted again
+    led.execute("INSERT INTO suppression (email_hash, reason, added_at) VALUES (?, 'erasure', ?)", (h, now_iso()))
     linkedin = []
     for slug in product_slugs():
         conn = store.open_state(slug)
         linkedin += [r[0] for r in conn.execute("SELECT linkedin_url FROM leads WHERE email = ? AND linkedin_url IS NOT NULL", (email,))]
-        result["products"][slug] = forget_in_product(slug, email)
-    h = ledger.email_hash(email)
-    led.execute("BEGIN IMMEDIATE")
-    try:
-        led.execute("INSERT INTO suppression (email_hash, reason, added_at) VALUES (?, 'erasure', ?)", (h, now_iso()))
         for url in linkedin:
             led.execute("INSERT INTO suppression (linkedin_hash, reason, added_at) VALUES (?, 'erasure', ?)",
                         (ledger.email_hash(url.rstrip("/").lower()), now_iso()))
-        led.execute("INSERT INTO erasure_log (email_hash, at, scopes_cleared_json) VALUES (?,?,?)",
-                    (h, now_iso(), json.dumps(result)))
-        led.execute("COMMIT")
-    except Exception:
-        led.execute("ROLLBACK")
-        raise
+        linkedin = []
+        result["products"][slug] = forget_in_product(slug, email)
+    led.execute("INSERT INTO erasure_log (email_hash, at, scopes_cleared_json) VALUES (?,?,?)",
+                (h, now_iso(), json.dumps(result)))
     try:
         from gtm.handler import stop_everywhere
         from gtm.sources import snov

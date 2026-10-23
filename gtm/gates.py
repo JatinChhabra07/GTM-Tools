@@ -20,10 +20,39 @@ from gtm.util import domain_of, now, parse_iso
 CCTLD = {"in": "IN", "uk": "GB", "de": "DE", "fr": "FR", "es": "ES", "it": "IT", "nl": "NL", "se": "SE",
          "ie": "IE", "pl": "PL", "pt": "PT", "be": "BE", "at": "AT", "dk": "DK", "fi": "FI", "eu": "DE",
          "ch": "CH", "no": "NO", "au": "AU", "ca": "CA", "sg": "SG", "ae": "AE", "jp": "JP", "br": "BR"}
-COUNTRY_NAMES = {"india": "IN", "united states": "US", "usa": "US", "united states of america": "US",
-                 "united kingdom": "GB", "uk": "GB", "england": "GB", "germany": "DE", "france": "FR",
-                 "canada": "CA", "australia": "AU", "singapore": "SG", "united arab emirates": "AE",
-                 "netherlands": "NL", "spain": "ES", "ireland": "IE", "italy": "IT", "sweden": "SE"}
+COUNTRY_NAMES = {
+    "india": "IN", "bharat": "IN", "united states": "US", "usa": "US", "us": "US", "united states of america": "US",
+    "united kingdom": "GB", "uk": "GB", "great britain": "GB", "england": "GB", "scotland": "GB", "wales": "GB",
+    "northern ireland": "GB", "canada": "CA", "australia": "AU", "new zealand": "NZ", "singapore": "SG",
+    "united arab emirates": "AE", "uae": "AE", "switzerland": "CH", "japan": "JP", "brazil": "BR",
+    # EU/EEA in English and their own language: an EU lead must never fall through to "unknown"
+    "austria": "AT", "österreich": "AT", "belgium": "BE", "belgië": "BE", "belgique": "BE", "bulgaria": "BG",
+    "croatia": "HR", "hrvatska": "HR", "cyprus": "CY", "czechia": "CZ", "czech republic": "CZ", "česko": "CZ",
+    "denmark": "DK", "danmark": "DK", "estonia": "EE", "eesti": "EE", "finland": "FI", "suomi": "FI",
+    "france": "FR", "germany": "DE", "deutschland": "DE", "greece": "GR", "hungary": "HU", "magyarország": "HU",
+    "ireland": "IE", "italy": "IT", "italia": "IT", "latvia": "LV", "lithuania": "LT", "luxembourg": "LU",
+    "malta": "MT", "netherlands": "NL", "nederland": "NL", "holland": "NL", "poland": "PL", "polska": "PL",
+    "portugal": "PT", "romania": "RO", "românia": "RO", "slovakia": "SK", "slovenia": "SI", "spain": "ES",
+    "españa": "ES", "sweden": "SE", "sverige": "SE", "iceland": "IS", "liechtenstein": "LI", "norway": "NO",
+    "norge": "NO",
+    # cities/regions LinkedIn shows without a country
+    "bengaluru": "IN", "bangalore": "IN", "mumbai": "IN", "delhi": "IN", "new delhi": "IN", "gurugram": "IN",
+    "gurgaon": "IN", "noida": "IN", "hyderabad": "IN", "chennai": "IN", "pune": "IN", "kolkata": "IN",
+    "ahmedabad": "IN", "jaipur": "IN", "london": "GB", "manchester": "GB", "paris": "FR", "berlin": "DE",
+    "munich": "DE", "amsterdam": "NL", "dublin": "IE", "madrid": "ES", "barcelona": "ES", "stockholm": "SE",
+    "milan": "IT", "vienna": "AT", "warsaw": "PL", "brussels": "BE", "copenhagen": "DK", "lisbon": "PT",
+    "helsinki": "FI", "zurich": "CH", "toronto": "CA", "vancouver": "CA", "sydney": "AU", "dubai": "AE",
+    "san francisco bay area": "US", "new york city metropolitan area": "US", "greater new york city area": "US",
+    "new york": "US", "san francisco": "US", "los angeles": "US", "chicago": "US", "boston": "US",
+    "seattle": "US", "austin": "US", "miami": "US", "denver": "US", "atlanta": "US",
+}
+US_STATES = {"alabama", "alaska", "arizona", "arkansas", "california", "colorado", "connecticut", "delaware",
+             "florida", "hawaii", "idaho", "illinois", "indiana", "iowa", "kansas", "kentucky", "louisiana",
+             "maine", "maryland", "massachusetts", "michigan", "minnesota", "mississippi", "missouri", "montana",
+             "nebraska", "nevada", "new hampshire", "new jersey", "new mexico", "north carolina", "north dakota",
+             "ohio", "oklahoma", "oregon", "pennsylvania", "rhode island", "south carolina", "south dakota",
+             "tennessee", "texas", "utah", "vermont", "virginia", "washington", "west virginia", "wisconsin",
+             "wyoming", "district of columbia"}
 GENERIC_TLDS = {"com", "io", "co", "ai", "net", "org", "app", "dev", "so", "xyz", "tech", "biz", "info"}
 
 
@@ -33,11 +62,15 @@ def country_code(value: str | None) -> str | None:
     v = value.strip()
     if len(v) == 2 and v.isalpha():
         return "GB" if v.upper() == "UK" else v.upper()
-    low = v.lower()
-    if low in COUNTRY_NAMES:
-        return COUNTRY_NAMES[low]
-    tail = low.rsplit(",", 1)[-1].strip()  # "Bengaluru, Karnataka, India"
-    return COUNTRY_NAMES.get(tail)
+    parts = [p.strip() for p in v.lower().split(",") if p.strip()]  # "Bengaluru, Karnataka, India"
+    for raw in [", ".join(parts)] + parts[::-1]:  # the whole string, then from the country end
+        bare = raw.removeprefix("the ").removeprefix("greater ").removesuffix(" area").removesuffix(" metropolitan")
+        for p in (raw, bare.strip()):
+            if p in COUNTRY_NAMES:
+                return COUNTRY_NAMES[p]
+            if p in US_STATES:
+                return "US"
+    return None
 
 
 def geo_rule(cfg: ProductConfig, country: str | None):
@@ -53,8 +86,14 @@ def geo_rule(cfg: ProductConfig, country: str | None):
 def geo_allowed(cfg: ProductConfig, *, lead_country: str | None, hq_country: str | None,
                 domain: str) -> tuple[bool, str, str | None]:
     """(ok, reason, notice). Location decides; a ccTLD can only add a block; unknown = blocked."""
-    country = country_code(lead_country) or country_code(hq_country)
     tld = domain.rsplit(".", 1)[-1] if "." in domain else ""
+    if lead_country and lead_country.strip():
+        # the person's own location decides; if we can't read it, we don't guess from the company's HQ
+        country = country_code(lead_country)
+        if not country:
+            return False, f"lead location {lead_country[:40]!r} not recognised (unknown = blocked)", None
+    else:
+        country = country_code(hq_country)
     if not country:
         return False, "no known location (unknown = blocked)", None
     rule = geo_rule(cfg, country)

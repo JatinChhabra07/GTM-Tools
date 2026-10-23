@@ -148,8 +148,9 @@ def resume_payload(*, at: str, approved_by: str) -> dict:
 
 def mailbox_payload(*, mailbox_id: str, address: str, daily_cap: int, warmup_start: str | None,
                     warmup_min_days: int, start_sends: int, daily_increase: int,
-                    catchall_allowed: bool) -> dict:
-    """A mailbox's sending limits are signed too: raising a cap needs the PIN."""
+                    catchall_allowed: bool, brakes: int = 0) -> dict:
+    """A mailbox's sending limits are signed too: raising a cap needs the PIN. `brakes` = bounce brakes
+    the founder has acknowledged; a new brake invalidates the signature until they re-sign."""
     return {"kind": "mailbox", "id": mailbox_id, "address": address.lower(), "daily_cap": daily_cap,
             "warmup_start": warmup_start, "warmup_min_days": warmup_min_days, "start_sends": start_sends,
-            "daily_increase": daily_increase, "catchall_allowed": bool(catchall_allowed)}
+            "daily_increase": daily_increase, "catchall_allowed": bool(catchall_allowed), "brakes": int(brakes)}

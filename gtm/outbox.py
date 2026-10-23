@@ -30,7 +30,7 @@ class PushRefused(Exception):
 
 def approval_for(conn: sqlite3.Connection, ledger_conn: sqlite3.Connection, *, product: str, target: str,
                  target_id: str, content_hash: str, holdout: bool = False, score: float | None = None,
-                 auto_min: float = 85) -> sqlite3.Row | None:
+                 auto_min: float = 85, edited: bool = False) -> sqlite3.Row | None:
     """The approval that authorises exactly this content, or None."""
     rows = conn.execute("SELECT * FROM approvals WHERE target = ? AND target_id = ? AND content_hash = ? "
                         "ORDER BY id DESC", (target, target_id, content_hash)).fetchall()
@@ -43,7 +43,9 @@ def approval_for(conn: sqlite3.Connection, ledger_conn: sqlite3.Connection, *, p
             if signing.verify(payload, r["signature"]):
                 return r
         elif r["via"] == "policy" and target == "sequence":
-            if not holdout and score is not None and score >= auto_min and autosend_active(ledger_conn, product):
+            # auto-send never covers content a human edited (that needs the founder's own signature)
+            if (not holdout and not edited and not r["edited"] and r["approved_by"] == "policy:autosend"
+                    and score is not None and score >= auto_min and autosend_active(ledger_conn, product)):
                 return r
     return None
 
@@ -58,10 +60,23 @@ def autosend_active(ledger_conn: sqlite3.Connection, product: str) -> bool:
     return signing.verify(payload, json.loads(row["signature"])["sig"]) and payload.get("product") == product
 
 
+def guardrails_red(ledger_conn: sqlite3.Connection, product: str) -> str | None:
+    """Plan §6.3: auto-send turns itself off when bounces or complaints appear after it was enabled."""
+    sent = ledger_conn.execute("SELECT count(*) FROM account_sequences WHERE product = ?", (product,)).fetchone()[0]
+    bounced = ledger_conn.execute("SELECT count(*) FROM account_sequences WHERE product = ? AND status = 'bounced'",
+                                  (product,)).fetchone()[0]
+    if sent and bounced / sent >= 0.02:
+        return f"bounce rate {bounced}/{sent}"
+    if ledger_conn.execute("SELECT 1 FROM suppression WHERE reason = 'complaint' LIMIT 1").fetchone():
+        return "a spam complaint"
+    return None
+
+
 def in_window(cfg) -> bool:
     tz = ZoneInfo(cfg.schedule.timezone)
-    t = datetime.now(tz).strftime("%H:%M")
-    return cfg.sending.window.get("start", "00:00") <= t < cfg.sending.window.get("end", "23:59")
+    hm = lambda s: tuple(int(x) for x in str(s).split(":")[:2])  # "9:00" and "09:00" alike
+    t = datetime.now(tz)
+    return hm(cfg.sending.window.get("start", "00:00")) <= (t.hour, t.minute) < hm(cfg.sending.window.get("end", "23:59"))
 
 
 def _release_stuck(ctx) -> None:
@@ -77,6 +92,11 @@ def _autosend_policy(ctx) -> None:
     """With a signed auto-send record, write policy approvals for validated, gated, high-score leads.
     Holdout leads are never auto-approved."""
     if not autosend_active(ctx.ledger, ctx.slug):
+        return
+    red = guardrails_red(ctx.ledger, ctx.slug)
+    if red:
+        ctx.ledger.execute("UPDATE autosend SET enabled = 0 WHERE product = ?", (ctx.slug,))
+        ctx.note(f"auto-send switched OFF ({red}); every email needs your review again")
         return
     rows = ctx.conn.execute("SELECT * FROM sequences WHERE status = 'pending_review' AND holdout = 0 "
                             "AND score >= ? AND edited = 0", (ctx.cfg.sending.auto_send_min_score,)).fetchall()
@@ -157,7 +177,7 @@ def push_one(ctx, seq: sqlite3.Row, client) -> None:
         raise PushRefused("recipient differs from the lead record")
     if approval_for(ctx.conn, ctx.ledger, product=ctx.slug, target="sequence", target_id=seq["seq_id"],
                     content_hash=current, holdout=bool(seq["holdout"]), score=seq["score"],
-                    auto_min=ctx.cfg.sending.auto_send_min_score) is None:
+                    auto_min=ctx.cfg.sending.auto_send_min_score, edited=bool(seq["edited"])) is None:
         raise PushRefused("no valid signed approval for this exact content")
     from gtm import validate
     violations = validate.validate_sequence(steps, vctx)

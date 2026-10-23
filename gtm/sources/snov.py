@@ -204,7 +204,9 @@ class Snov:
         """Adding to a list with an active campaign STARTS the drip: call only after every gate."""
         data = {"listId": list_id, "email": email, "firstName": first_name, "lastName": last_name,
                 "fullName": f"{first_name} {last_name}".strip(), "companyName": company,
-                "updateContact": "false", "createDuplicates": "false"}
+                # true: a returning prospect's custom fields (our approved emails) are overwritten,
+                # never left holding an older sequence's text
+                "updateContact": "true", "createDuplicates": "false"}
         if position:
             data["position"] = position
         for k, v in custom_fields.items():
@@ -256,16 +258,16 @@ class Snov:
 
     def replies(self, campaign_id: int) -> list[dict]:
         """Every reply with its text. Paged by offset."""
-        out, offset = [], 0
-        while True:
+        out, offset, last_first = [], 0, None
+        for _ in range(500):  # page size isn't documented: read until an empty or repeated page
             body = self.request("GET", f"/v2/campaigns/{campaign_id}/all-replies", params={"offset": offset})
             rows = body.get("data", []) if isinstance(body, dict) else body
-            if not rows:
+            if not rows or rows[0] == last_first:
                 return out
+            last_first = rows[0]
             out += rows
-            if len(rows) < 100:
-                return out
             offset += len(rows)
+        raise SnovError("all-replies paging did not end: refusing a partial read")
 
     def activity(self, campaign_id: int, date_from: str, date_to: str) -> list[dict]:
         """sent / open / click / reply / bounce / unsubscribe events (max 31-day window)."""

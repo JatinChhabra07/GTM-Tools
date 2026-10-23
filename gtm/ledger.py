@@ -141,6 +141,17 @@ LEDGER_MIGRATIONS: list[str] = [
     );
     ALTER TABLE account_sequences ADD COLUMN email_class TEXT;
     """,
+    # v3: bounce brakes are counted and signed over, so only the founder's PIN un-pauses a mailbox
+    """
+    ALTER TABLE mailboxes ADD COLUMN brake_count INTEGER NOT NULL DEFAULT 0;
+    -- however the kill switch gets set, it is stamped and any old resume signature is void
+    CREATE TRIGGER sending_state_paused AFTER UPDATE OF paused ON sending_state
+    WHEN NEW.paused = 1
+    BEGIN
+        UPDATE sending_state SET at = COALESCE(NEW.at, strftime('%Y-%m-%dT%H:%M:%S+00:00', 'now')),
+                                 resume_signature = NULL WHERE id = NEW.id;
+    END;
+    """,
 ]
 
 
@@ -174,4 +185,16 @@ def is_suppressed(conn: sqlite3.Connection, *, email: str | None = None,
 
 
 def sending_paused(conn: sqlite3.Connection) -> bool:
-    return bool(conn.execute("SELECT paused FROM sending_state WHERE id = 1").fetchone()[0])
+    """Paused, or un-paused without the founder's signed resume (e.g. a raw UPDATE)."""
+    import json
+    from gtm import signing
+    row = conn.execute("SELECT paused, at, resume_signature FROM sending_state WHERE id = 1").fetchone()
+    if row["paused"]:
+        return True
+    if row["at"] is None:  # never paused
+        return False
+    try:
+        sig = json.loads(row["resume_signature"] or "")
+        return not signing.verify(signing.resume_payload(at=row["at"], approved_by=sig["by"]), sig["sig"])
+    except (ValueError, KeyError, TypeError):
+        return True

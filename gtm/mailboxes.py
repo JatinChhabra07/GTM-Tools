@@ -18,7 +18,7 @@ def payload(row: sqlite3.Row | dict) -> dict:
         mailbox_id=row["id"], address=row["address"], daily_cap=row["daily_cap"],
         warmup_start=row["warmup_start"], warmup_min_days=row["warmup_min_days"],
         start_sends=row["start_sends"], daily_increase=row["daily_increase"],
-        catchall_allowed=bool(row["catchall_allowed"]))
+        catchall_allowed=bool(row["catchall_allowed"]), brakes=row["brake_count"] if "brake_count" in row.keys() else 0)
 
 
 def signed_ok(row: sqlite3.Row) -> bool:
@@ -28,17 +28,19 @@ def signed_ok(row: sqlite3.Row) -> bool:
 def add(ledger_conn: sqlite3.Connection, private_key, *, mailbox_id: str, address: str, daily_cap: int,
         warmup_start: str | None, warmup_min_days: int = 14, start_sends: int = 5,
         daily_increase: int = 3, catchall_allowed: bool = False) -> None:
+    prev = get(ledger_conn, mailbox_id)
     row = {"id": mailbox_id, "address": address.lower(), "daily_cap": daily_cap,
            "warmup_start": warmup_start, "warmup_min_days": warmup_min_days, "start_sends": start_sends,
-           "daily_increase": daily_increase, "catchall_allowed": int(catchall_allowed)}
-    sig = signing.sign(private_key, payload(row))
+           "daily_increase": daily_increase, "catchall_allowed": int(catchall_allowed),
+           "brake_count": prev["brake_count"] if prev else 0}
+    sig = signing.sign(private_key, payload(row))  # re-signing acknowledges every brake so far
     ledger_conn.execute(
         "INSERT INTO mailboxes (id, address, daily_cap, warmup_start, warmup_min_days, start_sends, "
         "daily_increase, catchall_allowed, signature) VALUES (?,?,?,?,?,?,?,?,?) "
         "ON CONFLICT(id) DO UPDATE SET address=excluded.address, daily_cap=excluded.daily_cap, "
         "warmup_start=excluded.warmup_start, warmup_min_days=excluded.warmup_min_days, "
         "start_sends=excluded.start_sends, daily_increase=excluded.daily_increase, "
-        "catchall_allowed=excluded.catchall_allowed, signature=excluded.signature",
+        "catchall_allowed=excluded.catchall_allowed, signature=excluded.signature, paused=0",
         (mailbox_id, address.lower(), daily_cap, warmup_start, warmup_min_days, start_sends,
          daily_increase, int(catchall_allowed), sig))
 
@@ -114,7 +116,8 @@ def apply_bounce_brake(ledger_conn: sqlite3.Connection, mailbox_id: str) -> bool
     rate, bounced, _ = bounce_rate(ledger_conn, mailbox_id)
     ledger_conn.execute("UPDATE mailboxes SET bounce_rate_7d = ? WHERE id = ?", (rate, mailbox_id))
     if bounced and rate > BOUNCE_BRAKE:
-        cur = ledger_conn.execute("UPDATE mailboxes SET paused = 1 WHERE id = ? AND paused = 0", (mailbox_id,))
+        cur = ledger_conn.execute("UPDATE mailboxes SET paused = 1, brake_count = brake_count + 1 "
+                                  "WHERE id = ? AND paused = 0", (mailbox_id,))
         return cur.rowcount == 1
     return False
 

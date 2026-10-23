@@ -285,7 +285,7 @@ def sending_resume() -> None:
 def sending_status() -> None:
     led = ledger.open_ledger()
     row = led.execute("SELECT * FROM sending_state WHERE id = 1").fetchone()
-    _echo({"paused": bool(row["paused"]), "reason": row["reason"], "at": row["at"]})
+    _echo({"paused": ledger.sending_paused(led), "reason": row["reason"], "at": row["at"]})
 
 
 def autosend_eligibility(product: str) -> dict:
@@ -294,10 +294,15 @@ def autosend_eligibility(product: str) -> dict:
     conn = store.open_state(product)
     led = ledger.open_ledger()
     first = conn.execute("SELECT min(pushed_at) FROM sequences WHERE pushed_at IS NOT NULL").fetchone()[0]
-    approved = conn.execute("SELECT count(*), sum(edited = 0) FROM approvals WHERE target = 'sequence' AND via = 'tty_pin'").fetchone()
+    # only approvals whose signature verifies count toward the track record
+    signed = [r for r in conn.execute("SELECT * FROM approvals WHERE target = 'sequence' AND via = 'tty_pin'")
+              if signing.verify(signing.approval_payload(
+                  product=product, target="sequence", target_id=r["target_id"], content_hash=r["content_hash"],
+                  approved_by=r["approved_by"], approved_at=r["approved_at"], via="tty_pin",
+                  edited=bool(r["edited"])), r["signature"])]
     rejected = conn.execute("SELECT count(*) FROM sequences WHERE status = 'rejected'").fetchone()[0]
-    reviewed = (approved[0] or 0) + rejected
-    unedited = (approved[1] or 0) / reviewed if reviewed else 0
+    reviewed = len(signed) + rejected
+    unedited = sum(1 for r in signed if not r["edited"]) / reviewed if reviewed else 0
     sent = led.execute("SELECT count(*) FROM account_sequences WHERE product = ?", (product,)).fetchone()[0]
     bounced = led.execute("SELECT count(*) FROM account_sequences WHERE product = ? AND status = 'bounced'", (product,)).fetchone()[0]
     complaints = led.execute("SELECT count(*) FROM suppression WHERE reason = 'complaint'").fetchone()[0]
