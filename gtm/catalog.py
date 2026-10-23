@@ -39,9 +39,11 @@ CATALOG: tuple[Code, ...] = (
     Code("SWITCHING", "intent", "A named person says they are moving off their current tool",
          cost_class="paid", cost_note="Apify LinkedIn/X post search", freshness_days=21, rank=2),
     Code("HIRING_FOR_PROBLEM", "intent", "Job post for a role whose work our product does or helps",
+         cost_class="paid", cost_note="Apify LinkedIn jobs (also free from their careers page)",
          freshness_days=45, rank=3),
     # triggers: company events that make buying likely
     Code("HIRING_ROLE", "trigger", "Company is hiring a role in our buyer's team", value_type="text",
+         cost_class="paid", cost_note="Apify LinkedIn jobs (also free from their careers page)",
          freshness_days=45, rank=4),
     Code("FUNDING", "trigger", "Company raised money", value_type="text", freshness_days=60, rank=5),
     Code("LEADERSHIP_CHANGE", "trigger", "New executive in our buyer's function", value_type="text",
@@ -60,8 +62,6 @@ CATALOG: tuple[Code, ...] = (
     Code("RUNNING_GOOGLE_ADS", "trigger", "Google Ads tag on their site (spending on acquisition now)",
          freshness_days=30, rank=9),
     Code("RUNNING_META_ADS", "trigger", "Meta pixel on their site", freshness_days=30, rank=9),
-    Code("EXEC_POST_TOPIC", "trigger", "An executive posted about our problem area", value_type="text",
-         cost_class="paid", cost_note="Apify LinkedIn company posts", freshness_days=21, rank=4),
     # firmographic: who the account is
     Code("INDUSTRY", "firmographic", "Industry", value_type="text", rank=20),
     Code("SIZE_BAND", "firmographic", "Employee band", value_type="text", rank=20),
@@ -69,7 +69,6 @@ CATALOG: tuple[Code, ...] = (
     Code("TECH_STACK", "firmographic", "A tool they use", value_type="text", rank=15),
     Code("SITE_PAGE_COUNT", "firmographic", "Pages in sitemap (size proxy)", value_type="num", rank=30,
          threshold_op=">=", threshold_value=20),
-    Code("COMPETITOR_CUSTOMER", "firmographic", "Listed as a customer of a competitor", rank=10),
     # contact (system): who to email and whether we can
     Code("TEAM_MEMBER_FOUND", "contact", "A named person with a title on their team page",
          value_type="text", rank=50),

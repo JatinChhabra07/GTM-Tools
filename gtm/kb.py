@@ -268,6 +268,15 @@ def ingest(slug: str, items: list[dict], *, authority: str = "site") -> dict:
     return out
 
 
+def drop_site_facts(slug: str) -> int:
+    """Re-onboarding: remove what the site said before (human facts and learnings stay)."""
+    be = backend(slug)
+    rows = [r for r in be.all({}) if r.get("authority") == "site"]
+    for r in rows:
+        be.delete(r["id"])
+    return len(rows)
+
+
 def extracted_path(slug: str) -> Path:
     return product_config_dir(slug) / "knowledge" / "extracted.jsonl"
 

@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: small-sample-no-winner
+expected_outcome: |
+  Reads report --outcomes and says the sample is too small to call a winner, citing the confidence ranges.

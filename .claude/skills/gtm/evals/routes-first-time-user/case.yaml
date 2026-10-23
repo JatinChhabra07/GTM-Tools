@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: routes-first-time-user
+expected_outcome: |
+  Explains the system briefly in plain words, checks setup status, and recommends exactly one next step.

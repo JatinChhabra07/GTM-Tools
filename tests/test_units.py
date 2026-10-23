@@ -88,6 +88,10 @@ def test_persona_match(product):
     assert enrich.match_persona("Executive Assistant to the CEO", personas) is None
     assert enrich.match_persona("Software Engineer", personas) is None
     assert enrich.match_persona(None, personas) is None
+    assert enrich.match_persona("Recruiting Manager", personas) is None
+    hr = [config.Persona(name="Talent", titles=["Recruiter", "Head of Talent"], seniority="manager")]
+    assert enrich.match_persona("Senior Recruiter", hr)[0].name == "Talent"  # the founder asked for recruiters
+    assert enrich.match_persona("Executive Assistant", hr) is None
 
 
 # --- KB ----------------------------------------------------------------------------------------
@@ -206,3 +210,29 @@ def test_crawl_writes_ranked_same_site_pages(product):
     assert all("elsewhere" not in u for u in urls)
     first = (site_crawl.pages_dir(SLUG) / rep["index"][0]["file"]).read_text()
     assert first.startswith("<!-- source: https://acme.example/")
+
+
+def test_replace_drops_site_facts_but_keeps_human(product):
+    kb.ingest(SLUG, [{"category": "product_fact", "text": "Plans start at $29"}])
+    kb.add(SLUG, "product_fact", "Founder says: setup takes one afternoon", authority="human")
+    assert kb.drop_site_facts(SLUG) >= 1
+    texts = {m["text"] for m in kb.all_memories(SLUG)}
+    assert "Plans start at $29" not in texts and "Founder says: setup takes one afternoon" in texts
+
+
+def test_build_estimate_then_confirm_buys_linkedin_data_once(product):
+    import json as _json
+    from typer.testing import CliRunner
+    from gtm.cli import app
+    r = CliRunner().invoke(app, ["accounts", "build", "--product", SLUG, "--estimate"])
+    assert r.exit_code == 0, r.output
+    est = _json.loads(r.output)
+    assert est["new_accounts"] >= 2 and est["without_linkedin_data"] == est["new_accounts"]
+    fake.FakeApify.started.clear()
+    r = CliRunner().invoke(app, ["accounts", "build", "--product", SLUG, "--confirm"])
+    out = _json.loads(r.output)
+    assert out["new_accounts"] == 0 and out["linkedin"]["requested"] == est["new_accounts"]
+    assert [k for k, _ in fake.FakeApify.started] == ["company"]
+    fake.FakeApify.started.clear()
+    r = CliRunner().invoke(app, ["accounts", "build", "--product", SLUG, "--confirm"])
+    assert _json.loads(r.output)["without_linkedin_data"] == 0 and fake.FakeApify.started == []

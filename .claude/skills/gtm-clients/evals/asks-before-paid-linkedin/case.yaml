@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: asks-before-paid-linkedin
+expected_outcome: |
+  Writes clients.csv with bare domains, runs accounts clients --estimate, asks before --confirm, then calibrates or explains why it can't yet.

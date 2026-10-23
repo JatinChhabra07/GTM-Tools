@@ -9,18 +9,19 @@
       "Bash(bin/gtm keys:*)",
       "Bash(bin/gtm secrets set:*)",
       "Bash(bin/gtm review:*)",
-      "Bash(bin/gtm autosend:*)",
-      "Bash(bin/gtm sending:*)",
+      "Bash(bin/gtm autosend enable:*)",
+      "Bash(bin/gtm sending resume:*)",
       "Bash(bin/gtm forget:*)",
       "Bash(bin/gtm mailbox add:*)",
       "Bash(uv run gtm keys:*)",
       "Bash(uv run gtm secrets set:*)",
       "Bash(uv run gtm review:*)",
-      "Bash(uv run gtm autosend:*)",
-      "Bash(uv run gtm sending:*)",
+      "Bash(uv run gtm autosend enable:*)",
+      "Bash(uv run gtm sending resume:*)",
       "Bash(uv run gtm forget:*)",
       "Bash(sqlite3:*)",
-      "Bash(cat ~/.config/gtm-tools:*)"
+      "Bash(cat ~/.config/gtm-tools:*)",
+      "Bash(bin/gtm manual done:*)"
     ]
   }
 }

@@ -179,7 +179,10 @@ def linkedin_enrich(conn: sqlite3.Connection, cfg: ProductConfig, domains: list[
                            evidence_url=ev, confidence=0.8, observed_at=observed,
                            value_text=f"{last.get('fundingType', 'round')}".strip()[:80], run_id=run_id)
         n += 1
-    return {"enriched": n, "usd": info.usage_usd}
+    # asked = paid for, matched or not: never buy the same company twice
+    conn.executemany("UPDATE accounts SET linkedin_company_checked_at = COALESCE(linkedin_company_checked_at, ?) "
+                     "WHERE domain = ?", [(now_iso(), r["domain"]) for r in rows])
+    return {"enriched": n, "requested": len(rows), "usd": info.usage_usd}
 
 
 def _funding_date(v) -> str | None:

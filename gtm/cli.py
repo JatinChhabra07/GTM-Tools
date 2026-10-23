@@ -288,17 +288,20 @@ def kb_add(product: str = typer.Option(...), category: str = typer.Option(...),
 @kb_app.command("ingest")
 def kb_ingest(product: str = typer.Option(...),
               file: Path = typer.Option(..., exists=True, help="JSON list or JSONL of {category,text,source_url}"),
-              keep: bool = typer.Option(True, help="also append to knowledge/extracted.jsonl for rebuilds")) -> None:
-    """Add facts extracted from the product site (authority=site)."""
+              keep: bool = typer.Option(True, help="also append to knowledge/extracted.jsonl for rebuilds"),
+              replace: bool = typer.Option(False, help="drop every earlier site fact first (re-onboarding)")) -> None:
+    """Add facts extracted from the product site (authority=site). Human facts are never touched."""
     k = _kb()
     slug = _slug(product)
     raw = file.read_text().strip()
     items = json.loads(raw) if raw.startswith("[") else [json.loads(x) for x in raw.splitlines() if x.strip()]
+    removed = k.drop_site_facts(slug) if replace else 0
     res = k.ingest(slug, items)
+    res["replaced"] = removed
     if keep:
         ex = k.extracted_path(slug)
         ex.parent.mkdir(parents=True, exist_ok=True)
-        with ex.open("a") as f:
+        with ex.open("w" if replace else "a") as f:
             for item in items:
                 f.write(json.dumps(item, ensure_ascii=False) + "\n")
     typer.echo(json.dumps(res, indent=2))
@@ -386,6 +389,36 @@ def _tool_checks() -> dict[str, dict]:
     }
 
 
+def _progress(slug: str, cfg) -> dict:
+    """Where this product is in the setup journey. Each probe is independent: one failure doesn't hide the rest."""
+    from gtm import ledger, store
+    out: dict = {}
+    conn = store.open_state(slug)
+    out["signals_confirmed"] = [r[0] for r in conn.execute(
+        "SELECT code FROM signal_codes WHERE status = 'confirmed' AND kind IN ('intent','trigger')")]
+    out["clients"] = conn.execute("SELECT count(*) FROM clients").fetchone()[0]
+    out["accounts"] = conn.execute("SELECT count(*) FROM accounts WHERE status NOT IN ('client','near_miss')").fetchone()[0]
+    try:
+        from gtm import kb
+        out["kb_facts"] = kb.stats(slug)["total"]
+    except Exception as e:
+        out["kb_facts"] = None
+        out["kb_error"] = f"{type(e).__name__} (is Qdrant up? bin/gtm kb up)"
+    led = ledger.open_ledger()
+    out["mailboxes"] = [{"id": r["id"], "ready": r["ready_state"], "paused": bool(r["paused"])}
+                        for r in led.execute("SELECT id, ready_state, paused FROM mailboxes")]
+    out["snov_linked"] = bool(led.execute("SELECT 1 FROM snov_campaigns WHERE product = ? AND settings_ok = 1",
+                                          (slug,)).fetchone())
+    try:
+        from gtm import schedule
+        out["schedule"] = len(schedule.show(slug))
+    except Exception:
+        out["schedule"] = None
+    out["tools"] = {"last30days": __import__("gtm.sources.last30days", fromlist=["x"]).installed(),
+                    "qdrant": _qdrant_ready()}
+    return out
+
+
 @setup_app.command("status")
 def setup_status(product: str = typer.Option(None)) -> None:
     """JSON checklist the /gtm-setup wizard reads to decide what to ask next. No secret values."""
@@ -411,12 +444,26 @@ def setup_status(product: str = typer.Option(None)) -> None:
                 missing.append("voice.sender_name")
             if not cfg.voice.postal_address:
                 missing.append("voice.postal_address (US law needs it before sending)")
-            if not cfg.sending.mailboxes:
-                missing.append("sending.mailboxes (founder runs `bin/gtm mailbox add` in his terminal)")
             clients_csv = product_config_dir(slug) / "clients.csv"
             if not clients_csv.exists():
-                missing.append(f"clients.csv at {clients_csv}")
-        out["product"] = {"slug": slug, "missing": missing,
+                missing.append(f"clients.csv at {clients_csv} (run /gtm-clients)")
+        progress = _progress(slug, cfg) if cfg else {}
+        if cfg:
+            if not progress.get("signals_confirmed"):
+                missing.append("confirmed intent/trigger signals (run /gtm-icp)")
+            if not progress.get("kb_facts"):
+                missing.append("product knowledge (run /gtm-onboard)")
+            if not progress.get("accounts"):
+                missing.append("target accounts (run /gtm-accounts)")
+            if not progress.get("mailboxes"):
+                missing.append("a sending mailbox (founder runs `bin/gtm mailbox add` in their own terminal)")
+            elif not cfg.sending.mailboxes:
+                missing.append("sending.mailboxes in product config (which registered mailbox this product uses)")
+            if cfg.sending.mailboxes and not progress.get("snov_linked"):
+                missing.append("Snov campaign link (bin/gtm snov setup, then snov link)")
+            if not progress.get("schedule"):
+                missing.append("schedule (bin/gtm schedule install)")
+        out["product"] = {"slug": slug, "missing": missing, "progress": progress,
                           "usage_profile": cfg.usage.profile if cfg else None,
                           "geo": {k: v.status for k, v in cfg.geo_policy.items()} if cfg else None}
     if not out["signing_keys"]:

@@ -26,6 +26,16 @@ ALIASES = {"ceo": "chief executive officer", "cto": "chief technology officer", 
            "vp": "vice president", "co-founder": "cofounder", "co founder": "cofounder"}
 
 
+def excluded(title: str, personas) -> bool:
+    """Assistants, interns, recruiters... are never the buyer, unless the founder's own persona titles
+    use that word (an HR-tech product does sell to recruiters)."""
+    hits = {w.lower()[:6] for w in EXCLUDE_TITLE.findall(title)}
+    if not hits:
+        return False
+    wanted = {w.lower()[:6] for p in personas for t in p.titles for w in EXCLUDE_TITLE.findall(t)}
+    return bool(hits - wanted)
+
+
 def _norm_title(t: str) -> str:
     t = normalize_text(t).replace("&", " and ")
     t = re.sub(r"[^a-z0-9 ]", " ", t.replace("co-founder", "cofounder"))
@@ -35,7 +45,7 @@ def _norm_title(t: str) -> str:
 
 def match_persona(title: str | None, personas) -> tuple[object, str] | None:
     """exact title, then fuzzy (all persona-title words present), never for excluded roles."""
-    if not title or EXCLUDE_TITLE.search(title):
+    if not title or excluded(title, personas):
         return None
     nt = _norm_title(title)
     tokens = set(nt.split())
@@ -57,7 +67,7 @@ def llm_match(ctx, titles: list[str]) -> dict[str, str | None]:
         row = ctx.conn.execute("SELECT persona FROM persona_cache WHERE title_norm = ?", (_norm_title(t),)).fetchone()
         if row:
             out[t] = row[0]
-        elif not EXCLUDE_TITLE.search(t):
+        elif not excluded(t, ctx.cfg.personas):
             todo.append(t)
     if todo and ctx.llm.remaining >= 12:
         personas = [{"name": p.name, "titles": p.titles, "seniority": p.seniority} for p in ctx.cfg.personas]

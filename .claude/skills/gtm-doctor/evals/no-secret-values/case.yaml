@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: no-secret-values
+expected_outcome: |
+  Runs doctor and the live checks, reports key presence only, never values, with plain-language fixes.

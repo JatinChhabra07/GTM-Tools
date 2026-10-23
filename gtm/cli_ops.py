@@ -117,10 +117,19 @@ def feedback_cmd(product: str = typer.Option(...)) -> None:
 
 
 def report_cmd(product: str = typer.Option(...), run: str = typer.Option(None, help="a run id; default: latest"),
-               outcomes: bool = typer.Option(False, help="reply-rate metrics with confidence intervals")) -> None:
+               outcomes: bool = typer.Option(False, help="reply-rate metrics with confidence intervals"),
+               proposals: bool = typer.Option(False, help="open learning proposals from reply data"),
+               close: int = typer.Option(None, help="with --proposals: mark this proposal id handled"),
+               accepted: bool = typer.Option(True, help="with --close: accepted (default) or --no-accepted")) -> None:
     """The latest run report (aggregates only, safe to show in a Claude session)."""
     from gtm import report
     conn = store.open_state(product)
+    if proposals:
+        if close is not None:
+            conn.execute("UPDATE proposals SET status = ? WHERE id = ?", ("accepted" if accepted else "rejected", close))
+        _echo([{"id": r["id"], "kind": r["kind"], "at": r["at"], **json.loads(r["body_json"])}
+               for r in conn.execute("SELECT * FROM proposals WHERE status = 'open' ORDER BY at")])
+        return
     if outcomes:
         _echo(report.outcomes(conn, ledger.open_ledger(), product))
         return
@@ -345,14 +354,17 @@ def accounts_clients(product: str = typer.Option(...), estimate: bool = typer.Op
         conn = store.open_state(product)
         res = accounts.import_clients(conn, product)
         domains = [r[0] for r in conn.execute("SELECT domain FROM accounts WHERE status IN ('client','near_miss')")]
-        cost = apify.estimate("company", len(domains))
+        unpaid = [r[0] for r in conn.execute("SELECT domain FROM accounts WHERE status IN ('client','near_miss') "
+                                             "AND linkedin_company_checked_at IS NULL")]
+        cost = apify.estimate("company", len(unpaid))
         if estimate and not confirm:
-            _echo({**res, "accounts": len(domains), "linkedin_data_estimate_usd": cost,
+            _echo({**res, "accounts": len(domains), "without_linkedin_data": len(unpaid), "linkedin_data_estimate_usd": cost,
                    "next": "re-run with --confirm to buy LinkedIn company data (better lookalikes)"})
             return
         res["profiled"] = accounts.profile_accounts(conn, cfg, domains)
         if confirm:
-            res["linkedin"] = accounts.linkedin_enrich(conn, cfg, domains, budget=Budget(max(cost * 1.5, 0.05), 0))
+            res["linkedin"] = (accounts.linkedin_enrich(conn, cfg, unpaid, budget=Budget(max(cost * 1.5, 0.05), 0))
+                               if unpaid else {"enriched": 0, "note": "all already have LinkedIn data"})
         res["client_patterns"] = accounts.client_pattern_memories(conn, product)
         res["prescore"] = accounts.rescore_accounts(conn, cfg)
         _echo(res)
@@ -382,13 +394,19 @@ def accounts_build(product: str = typer.Option(...), estimate: bool = typer.Opti
                 break
             if accounts.ensure_account(conn, domain=c["domain"], name=c["name"], source="tal", evidence=c["evidence"]):
                 new.append(c["domain"])
-        cost = apify.estimate("company", len(new))
         out = {"queries": len(queries), "candidates": len(found), "new_accounts": len(new),
-               "isolated_calls": session.calls, "linkedin_data_estimate_usd": cost}
+               "isolated_calls": session.calls}
         out["profiled"] = accounts.profile_accounts(conn, cfg, new)
-        if confirm and new:
-            out["linkedin"] = accounts.linkedin_enrich(conn, cfg, new, budget=Budget(min(cfg.tal.build_budget_usd, cost * 1.5 + 0.05), 0))
-        elif new:
+        # the paid part covers every target account still without LinkedIn data, not just this call's new ones
+        pending = [r[0] for r in conn.execute(
+            "SELECT domain FROM accounts WHERE source = 'tal' AND status IN ('new','prequalified','below_cutoff') "
+            "AND linkedin_company_checked_at IS NULL ORDER BY created_at LIMIT ?", (max_new,))]
+        cost = apify.estimate("company", len(pending))
+        out.update(without_linkedin_data=len(pending), linkedin_data_estimate_usd=cost)
+        if confirm and pending:
+            out["linkedin"] = accounts.linkedin_enrich(conn, cfg, pending,
+                                                       budget=Budget(min(cfg.tal.build_budget_usd, cost * 1.5 + 0.05), 0))
+        elif pending:
             out["next"] = "re-run with --confirm to buy LinkedIn company data for better pre-scores"
         out["prescore"] = accounts.rescore_accounts(conn, cfg)
         _echo(out)
