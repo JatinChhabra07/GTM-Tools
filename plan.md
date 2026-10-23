@@ -996,3 +996,18 @@ time, and only an actor that returns the reviewer's company and has a clear pric
   - `tools install` ran live: wigolo was already available to Claude Code, so nothing was added.
 - **D2 and D3** are being built in parallel in separate worktrees, each with its own venv. D2 owns
   the next migration and the catalog; D3 adds neither.
+- **D3 done (merged from commit 8a67eee).**
+  - **New pieces:** `gtm/social.py`, the intent sheet (`bin/gtm sheet`, `--remove` for erasure,
+    formula-safe cells, 90-day row retention), `bin/gtm signals test`, per-source on/off
+    (`signals.sources`), wigolo fallback sources, company-named posts → accounts (the author is
+    never a lead), and Reddit/HN intent labelling (hard cap of 2 calls per run). 335 tests.
+  - **Live keyless test:** Reddit 6 items, 2 with intent; HN, Quora, Indie Hackers, forums and
+    review sites gave little or no intent for the test keywords and are recommended OFF.
+  - **Finding (verified 2026-10-23):**
+    - last30days gives no Reddit author (its normaliser drops it); HN does give one.
+    - reddit.com blocks free fetching: a direct request gets a 403 or a JS wall, and wigolo's
+      browser gets "blocked by network security".
+    - So Reddit sheet rows have the post link but no profile.
+    - **Next (D3b, after D2/D4 merge):** an opt-in paid author lookup with Apify
+      `trudax/reddit-scraper-lite` (start URL = the post, which returns `username`; about $4 per
+      1,000 items), capped per run, switched on by the founder in `/gtm-icp` after seeing the cost.
