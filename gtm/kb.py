@@ -77,6 +77,28 @@ def ensure_qdrant(wait_s: int = 30) -> str:
 
 # ---------------------------------------------------------------- backends
 
+def _model_cached() -> bool:
+    try:
+        from huggingface_hub import try_to_load_from_cache
+        return isinstance(try_to_load_from_cache(EMBED_MODEL, "config.json"), str)
+    except Exception:
+        return False
+
+
+def count_fast(slug: str) -> int | None:
+    """Memories stored for a product, straight from Qdrant (no model load, creates nothing).
+    None = Qdrant isn't answering."""
+    if os.environ.get("GTM_FAKE") == "1" or os.environ.get("GTM_KB_BACKEND") == "memory":
+        return len(backend(slug).all({}))
+    try:
+        r = httpx.get(f"{QDRANT_URL}/collections/gtm_{slug}", timeout=3)
+    except httpx.HTTPError:
+        return None
+    if r.status_code == 404:
+        return 0
+    return int((r.json().get("result") or {}).get("points_count") or 0) if r.status_code == 200 else None
+
+
 class _Mem0Backend:
     """Thin adapter so tests can swap in an in-memory backend."""
 
@@ -89,6 +111,8 @@ class _Mem0Backend:
         os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
         os.environ.setdefault("MEM0_DIR", str(ensure_private_dir(product_data_dir(slug) / ".mem0")))
         warnings.filterwarnings("ignore", message="Cannot enable progress bars")
+        if _model_cached():  # `gtm tools install` downloaded it: no network round-trip on every run
+            os.environ.setdefault("HF_HUB_OFFLINE", "1")
         ensure_qdrant()
         from mem0 import Memory
         self.slug = slug

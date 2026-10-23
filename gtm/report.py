@@ -13,6 +13,7 @@ import math
 import sqlite3
 from datetime import timedelta
 
+from gtm.paths import runs_dir
 from gtm.util import domain_of, now, sanitize_name
 
 
@@ -89,6 +90,31 @@ def write_run_report(ctx, status: str, reason: str | None) -> None:
 
 
 # ---------------------------------------------------------------- outcome metrics (plan §4.5)
+
+RETENTION_DAYS = 90
+
+
+def prune_old_files(slug: str, days: int = RETENTION_DAYS) -> int:
+    """Retention (plan §6.1): run folders and cron logs older than `days` are deleted."""
+    import shutil
+    import time
+    from gtm.paths import product_data_dir
+    cutoff = time.time() - days * 86400
+    removed = 0
+    runs = runs_dir(slug)
+    if runs.exists():
+        for d in runs.iterdir():
+            if d.is_dir() and d.stat().st_mtime < cutoff:
+                shutil.rmtree(d, ignore_errors=True)
+                removed += 1
+    cron = product_data_dir(slug) / "cron"
+    if cron.exists():
+        for f in cron.iterdir():
+            if f.suffix == ".log" and f.stat().st_mtime < cutoff:
+                f.unlink(missing_ok=True)
+                removed += 1
+    return removed
+
 
 def wilson(successes: int, n: int, z: float = 1.96) -> tuple[float, float]:
     if n == 0:

@@ -13,6 +13,13 @@ from gtm.paths import check_slug, product_config_dir
 Seniority = Literal["c_level", "vp", "director", "manager", "ic"]
 
 
+EU = {"AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT", "LV",
+      "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE"}
+EEA_EXTRA = {"IS", "LI", "NO"}
+GROUPS = {"EU": EU | EEA_EXTRA, "UK": {"GB"}}
+GDPR_KEYS = {"EU", "UK"} | GROUPS["EU"] | GROUPS["UK"]
+
+
 class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -169,6 +176,10 @@ class ProductConfig(Strict):
         for code, rule in v.items():
             if rule.status == "allowed_with_notice" and not rule.notice:
                 raise ValueError(f"geo_policy.{code}: allowed_with_notice needs notice text")
+        for code, rule in v.items():
+            if code in GDPR_KEYS and rule.status != "blocked":
+                raise ValueError(f"geo_policy.{code}: EU/UK stays blocked (needs a legitimate-interest "
+                                 "assessment workflow this system doesn't have)")
         india = v.get("IN")
         if india and india.status != "blocked" and not india.legal_signoff:
             raise ValueError("geo_policy.IN can only be unblocked with legal_signoff set")

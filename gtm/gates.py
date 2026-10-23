@@ -12,14 +12,10 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 
 from gtm import ledger
-from gtm.config import ProductConfig
+from gtm.config import EEA_EXTRA, EU, GROUPS, ProductConfig
 from gtm.observations import Latest
 from gtm.util import domain_of, now, parse_iso
 
-EU = {"AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT", "LV",
-      "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE"}
-EEA_EXTRA = {"IS", "LI", "NO"}
-GROUPS = {"EU": EU | EEA_EXTRA, "UK": {"GB"}}
 # ccTLD -> country, only used to ADD a block (plan §4.1); generic TLDs are neutral
 CCTLD = {"in": "IN", "uk": "GB", "de": "DE", "fr": "FR", "es": "ES", "it": "IT", "nl": "NL", "se": "SE",
          "ie": "IE", "pl": "PL", "pt": "PT", "be": "BE", "at": "AT", "dk": "DK", "fi": "FI", "eu": "DE",

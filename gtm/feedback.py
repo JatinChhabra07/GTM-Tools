@@ -69,6 +69,8 @@ def run(slug: str) -> dict:
                               now_iso(), now_iso()))
                 out["drafts"] += 1
     out["proposals"] = propose(conn, led, slug)
+    from gtm.report import prune_old_files
+    out["pruned_files"] = prune_old_files(slug)
     return out
 
 

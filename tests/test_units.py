@@ -236,3 +236,25 @@ def test_build_estimate_then_confirm_buys_linkedin_data_once(product):
     fake.FakeApify.started.clear()
     r = CliRunner().invoke(app, ["accounts", "build", "--product", SLUG, "--confirm"])
     assert _json.loads(r.output)["without_linkedin_data"] == 0 and fake.FakeApify.started == []
+
+
+def test_retention_prunes_old_runs_only(product):
+    import os
+    import time
+    from gtm.paths import runs_dir
+    old, new = runs_dir(SLUG) / "20260101-000000-aaaa", runs_dir(SLUG) / "20261020-000000-bbbb"
+    for d in (old, new):
+        d.mkdir(parents=True)
+        (d / "report.md").write_text("x")
+    past = time.time() - 100 * 86400
+    os.utime(old, (past, past))
+    assert report.prune_old_files(SLUG) == 1
+    assert not old.exists() and new.exists()
+
+
+def test_eu_uk_cannot_be_unblocked(product):
+    cfg = config.load(SLUG).model_dump(mode="json")
+    for key in ("EU", "UK", "DE", "GB"):
+        bad = {**cfg, "geo_policy": {**cfg["geo_policy"], key: {"status": "allowed"}}}
+        with pytest.raises(Exception):
+            config.ProductConfig.model_validate(bad)

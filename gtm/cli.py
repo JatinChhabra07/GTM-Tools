@@ -398,12 +398,10 @@ def _progress(slug: str, cfg) -> dict:
         "SELECT code FROM signal_codes WHERE status = 'confirmed' AND kind IN ('intent','trigger')")]
     out["clients"] = conn.execute("SELECT count(*) FROM clients").fetchone()[0]
     out["accounts"] = conn.execute("SELECT count(*) FROM accounts WHERE status NOT IN ('client','near_miss')").fetchone()[0]
-    try:
-        from gtm import kb
-        out["kb_facts"] = kb.stats(slug)["total"]
-    except Exception as e:
-        out["kb_facts"] = None
-        out["kb_error"] = f"{type(e).__name__} (is Qdrant up? bin/gtm kb up)"
+    from gtm import kb
+    out["kb_facts"] = kb.count_fast(slug)
+    if out["kb_facts"] is None:
+        out["kb_error"] = "Qdrant isn't answering: bin/gtm kb up"
     led = ledger.open_ledger()
     out["mailboxes"] = [{"id": r["id"], "ready": r["ready_state"], "paused": bool(r["paused"])}
                         for r in led.execute("SELECT id, ready_state, paused FROM mailboxes")]
