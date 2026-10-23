@@ -60,6 +60,11 @@ class Icp(Strict):
     segments: list[Segment] = []
 
 
+# Where intent posts are read (plan §15.1 E1). The last six are free fallbacks via wigolo search.
+SOCIAL_SOURCES = ("linkedin", "x", "instagram", "reddit", "hackernews",
+                  "hn_web", "quora", "indiehackers", "forums", "reviews", "jobs")
+
+
 class SignalInputs(Strict):
     linkedin: dict = {}
     x: dict = {}
@@ -67,6 +72,17 @@ class SignalInputs(Strict):
     pain_language: dict = {}
     hiring_keywords: list[str] = []
     competitors: list[str] = []
+    # per-source on/off the founder confirmed after `gtm signals test`; a missing key keeps the
+    # default (core sources on, Instagram per instagram.enabled, fallbacks off): see gtm/social.py
+    sources: dict[str, bool] = {}
+
+    @field_validator("sources")
+    @classmethod
+    def _sources(cls, v: dict[str, bool]) -> dict[str, bool]:
+        unknown = sorted(set(v) - set(SOCIAL_SOURCES))
+        if unknown:
+            raise ValueError(f"unknown source(s) {unknown}: use {list(SOCIAL_SOURCES)}")
+        return v
 
 
 class Tal(Strict):

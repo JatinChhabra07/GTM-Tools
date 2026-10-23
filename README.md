@@ -14,8 +14,13 @@ short personal email to each. **Nothing is sent until you approve it with your P
    - companies hiring for the problem you solve, raising money, changing leaders, tools, pricing
      or website (Apify, wigolo, website checks)
    - named people on LinkedIn/X asking for a solution or complaining about a competitor
-   - Reddit / Hacker News (last30days) teach it how buyers describe the pain; those posters are
-     never emailed
+   - Reddit / Hacker News (last30days) and, if you switch them on, Quora, Indie Hackers, forums,
+     review sites and job boards (free web search). They teach it how buyers describe the pain,
+     and anonymous people asking for a solution go to your **intent sheet** (below); those
+     posters are never emailed. A post that names the poster's company adds that company as a
+     target; the right person there is found the normal way.
+   - `/gtm-icp` first tests each source for your product and suggests which to switch off
+     ("X finds nothing for this product" is a normal answer).
 4. **Finds the right person** at each company (Apify, their own website) and **checks the email
    address** (Snov.io). The company's own published phone line is shown in your review screen for
    a manual call if you want one; nothing is dialled automatically.
@@ -59,6 +64,18 @@ slowly on its own.
   Reply drafts: `bin/gtm review --product <slug> --drafts`.
 - **How is it going?** `/gtm-report` in Claude Code.
 - **Something wrong?** `/gtm-doctor`.
+
+## Intent sheet
+
+Most Reddit, Hacker News and forum posts are anonymous, so they can't be emailed. When one shows
+a real need, the run adds a row to `~/.local/share/gtm-tools/<slug>/intent_sheet.csv` (opens in
+Google Sheets or Excel): date found, source, post link, the poster's profile link when the source
+gives one (Hacker News does; Reddit usually doesn't, so open the post), what they need in one
+line, and their company if they named it. It is for **your manual follow-up** (a helpful reply
+in the thread, say). **Nobody on the sheet is emailed or contacted automatically.**
+`bin/gtm sheet --product <slug>` shows the new rows; rows older than 90 days are dropped; if
+someone asks to be removed, `bin/gtm sheet --product <slug> --remove <their post or profile link>`
+deletes them and keeps them out.
 
 ## Emergency stop
 

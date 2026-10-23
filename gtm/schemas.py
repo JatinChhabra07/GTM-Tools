@@ -20,6 +20,7 @@ class PostLabel(Out):
     strength: int | None = Field(None, ge=1, le=3)
     employer: str | None = None           # ONLY if the post/author text states it
     drop_reason: str | None = None        # vendor | job_seeker | meme | off_topic | unclear
+    summary: str | None = None            # one plain line for the intent sheet: no quotes, no names
 
 
 class PostLabels(Out):

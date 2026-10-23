@@ -27,7 +27,8 @@ and keep its evals passing (`claude plugin eval .` from the skill dir: real, bil
 | Web/news search, page diffs in scheduled runs | **wigolo** via the Python MCP stdio client (`gtm/sources/wigolo.py`) | runs |
 | Prospect company websites | `gtm/profile.py` over `gtm/public_http.py` (SSRF-safe) | Phase 2+ |
 | Knowledge base per product | **mem0** (`infer=False`) + Qdrant server, only via `gtm/kb.py` | Phase 1 |
-| Reddit / Hacker News pain language | **last30days** engine (pinned checkout, JSON mode) | Phase 4 |
+| Reddit / Hacker News pain language + anonymous intent posts | **last30days** engine (pinned checkout, JSON mode) | Phase 4, D3 |
+| Per-source test, fallback sources (Quora, forums, reviews, job boards), intent sheet | `bin/gtm signals test`, `bin/gtm sheet` (`gtm/social.py`) | `/gtm-icp`, D3 |
 | LinkedIn / X / jobs / people | **Apify** actors via `apify-client` (charge caps) | Phase 3+ |
 | Email find, verify, send, replies | **Snov.io** REST via `gtm/sources/snov.py` | Phase 0C+ |
 | Lead qualification | **graph-engineering** pattern (worker, 4 lens reviewers, synth, gate) in `gtm/qualify.py`; `/graph-engineering` for deep manual reviews | Phase 6 |

@@ -1,6 +1,8 @@
 """Resolve (plan §5 Phase 5): explicit evidence only. An employer named by the author is matched
-to an official domain from search results, and the evidence URL is required. Anonymous posts never
-reach this module; a post without employer evidence stays unresolved.
+to an official domain from search results, and the evidence URL is required. A post without
+employer evidence stays unresolved. An anonymous post that names the poster's company (plan §15.1
+E1) makes that company an account with the post as evidence, but its author never becomes a lead:
+only `named_person` posts create one.
 """
 
 from __future__ import annotations
@@ -38,7 +40,7 @@ def run(ctx) -> None:
 
 def _resolve_posts(ctx) -> None:
     rows = ctx.conn.execute("SELECT * FROM posts WHERE intent_code IS NOT NULL AND account_domain IS NULL "
-                            "AND resolvability IN ('named_person','company_event') AND employer IS NOT NULL "
+                            "AND resolvability IN ('named_person','company_event','anonymous') AND employer IS NOT NULL "
                             "ORDER BY intent_strength DESC, posted_at DESC").fetchall()
     if not rows:
         return
