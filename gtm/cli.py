@@ -522,5 +522,9 @@ from gtm import cli_ops  # noqa: E402  (operational commands; registered last to
 
 cli_ops.register(app)
 
+from gtm import cli_competitors  # noqa: E402  (plan §15.1 E2)
+
+app.add_typer(cli_competitors.competitors_app, name="competitors")
+
 if __name__ == "__main__":
     app()

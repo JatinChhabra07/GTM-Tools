@@ -10,6 +10,7 @@ description: Front door of the GTM-Tools cold-outreach automation. Works out whe
 1. **Learn the product**: reads the website into a knowledge base only this product uses.
 2. **Decide who to target**: ideal companies, the people to email, signals worth acting on.
 3. **Learn from clients**: finds companies that look like existing customers.
+   **Learn from competitors**: a sourced brief per competitor, and the companies that use them.
 4. **Watch for signals** two or three times a day: people asking for a solution or complaining
    about a competitor on LinkedIn/X, hiring, funding, website and pricing changes, plus
    Reddit/Hacker News for buyer language.
@@ -30,6 +31,7 @@ Run `bin/gtm setup status` (with `--product <slug>` when one exists; ask which i
 | no personas, segments or confirmed signals | `/gtm-icp` |
 | no clients loaded | `/gtm-clients` (optional but the biggest quality boost) |
 | no target accounts | `/gtm-accounts` |
+| competitors listed but never analysed, or founder asks about competitors | `/gtm-competitors` (optional) |
 | no mailbox, Snov link or schedule | `/gtm-setup` (sending section) |
 | all set, never run | `/gtm-run` (noop, then full) |
 | running | `/gtm-report` for results, `bin/gtm review --product <slug>` (their terminal) for approvals |

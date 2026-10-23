@@ -106,12 +106,14 @@ def http_client():
 
 def profile_accounts(conn: sqlite3.Connection, cfg: ProductConfig, domains: list[str], run_id: str | None = None) -> int:
     from gtm import profile
+    from gtm.competitors import signatures
     from gtm.triggers import apply_profile
     n = 0
+    hosts = signatures(cfg)  # competitor script hosts: a hit = COMPETITOR_CUSTOMER (free)
     with http_client() as http:
         for d in domains:
             prof = profile.profile(d, client=http, hiring_keywords=cfg.signals.hiring_keywords,
-                                   competitors=cfg.signals.competitors)
+                                   competitors=hosts)
             apply_profile(conn, prof, run_id=run_id, detect_changes=False)
             n += 1
     return n

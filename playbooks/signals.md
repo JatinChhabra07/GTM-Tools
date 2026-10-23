@@ -18,7 +18,7 @@ not "you're hiring".
 
 Use exactly one signal as the hook, chosen in this order:
 
-1. Stated intent (`ASKS_FOR_SOLUTION`, `COMPETITOR_PAIN`, `SWITCHING`)
+1. Stated intent (`ASKS_FOR_SOLUTION`, `COMPETITOR_PAIN`, `SWITCHING`, `COMPETITOR_REVIEW_NEGATIVE`)
 2. Hiring (`HIRING_FOR_PROBLEM`, `HIRING_ROLE`, `EXEC_POST_TOPIC`)
 3. Funding and leadership change (`FUNDING`, `LEADERSHIP_CHANGE`)
 4. Tech change (`TECH_ADDED`, `TECH_REMOVED`, `PRICING_CHANGE`)
@@ -36,6 +36,7 @@ A signal older than its window is never used as the hook, and the lead is re-che
 | `ASKS_FOR_SOLUTION` | 14 days |
 | `COMPETITOR_PAIN` | 21 days |
 | `SWITCHING` | 21 days |
+| `COMPETITOR_REVIEW_NEGATIVE` | 60 days |
 | `EXEC_POST_TOPIC` | 21 days |
 | `HIRING_FOR_PROBLEM` | 45 days, or while the post is live |
 | `HIRING_ROLE` | 45 days, or while the post is live |
@@ -56,6 +57,10 @@ Someone named asked for a tool, complained about a competitor, or said they're s
 is the strongest hook, and the most sensitive. Follow the reference policy in `writing.md`:
 if the lead wrote it, reference the topic, not the act of reading it. If a colleague wrote it,
 use the pain theme only. Never quote it back at length.
+
+A low review of a competitor (`COMPETITOR_REVIEW_NEGATIVE`) is always theme-only: never mention the
+review, the review site or the rating. Talk about the problem the review describes, as something
+teams like theirs run into.
 
 ## Hiring
 

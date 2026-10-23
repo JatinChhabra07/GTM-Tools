@@ -14,7 +14,7 @@ from datetime import timedelta
 from gtm import ledger
 from gtm.config import EEA_EXTRA, EU, GROUPS, ProductConfig
 from gtm.observations import Latest
-from gtm.util import domain_of, now, parse_iso
+from gtm.util import now, parse_iso
 
 # ccTLD -> country, only used to ADD a block (plan §4.1); generic TLDs are neutral
 CCTLD = {"in": "IN", "uk": "GB", "de": "DE", "fr": "FR", "es": "ES", "it": "IT", "nl": "NL", "se": "SE",
@@ -153,9 +153,10 @@ def check_lead(*, cfg: ProductConfig, conn: sqlite3.Connection, ledger_conn: sql
     # not a client / competitor / suppressed
     is_client = conn.execute("SELECT 1 FROM clients WHERE domain = ?", (domain,)).fetchone() is not None
     res.add("not_client", not is_client, "existing client")
-    competitor_names = {c.lower() for c in cfg.signals.competitors}
-    competitor_domains = {domain_of(c) for c in cfg.signals.competitors if "." in c}
-    is_comp = domain in competitor_domains or (account["name"] or "").lower() in competitor_names
+    from gtm.competitors import is_competitor, known_names
+    competitor_names = {c.lower() for c in list(cfg.signals.competitors) + known_names(cfg.product.slug)}
+    # listed domains + every domain a competitor brief resolved, subdomains included
+    is_comp = is_competitor(domain, cfg) or (account["name"] or "").lower() in competitor_names
     res.add("not_competitor", not is_comp, "competitor")
     res.add("not_suppressed", not ledger.is_suppressed(ledger_conn, email=email, domain=domain,
                                                          linkedin_url=lead["linkedin_url"]), "suppressed")

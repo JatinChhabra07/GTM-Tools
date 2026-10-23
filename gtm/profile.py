@@ -429,10 +429,17 @@ def _locs(xml: str) -> list[str]:
 
 # ── detectors ──
 
-def _detect_tech(doc: _Doc, prof: Profile) -> None:
+def _detect_tech(doc: _Doc, prof: Profile, competitor_hosts: dict[str, tuple[str, ...]]) -> None:
     for name, needles in TECH_SIGNATURES.items():
         if any(n in doc.markup for n in needles):
             prof.add("TECH_STACK", text=name, confidence=0.9, url=doc.url)
+    for name, hosts in competitor_hosts.items():
+        # their own site loading their own widget says nothing; a target loading it = their customer
+        if any(h == prof.domain or h.endswith("." + prof.domain) for h in hosts):
+            continue
+        if any(re.search(r"(?<![a-z0-9.-])" + re.escape(h.lower()), doc.markup) for h in hosts):
+            prof.add("COMPETITOR_CUSTOMER", text=name, confidence=0.8, url=doc.url)
+            prof.add("TECH_STACK", text=name, confidence=0.8, url=doc.url)
     if GOOGLE_ADS_RE.search(doc.markup):
         prof.add("RUNNING_GOOGLE_ADS", num=1.0, confidence=0.9, url=doc.url)
     if META_PIXEL_RE.search(doc.markup):
@@ -621,17 +628,17 @@ def _apply_schema(doc: _Doc, prof: Profile) -> None:
 
 # ── the profiler ──
 
-def profile(domain: str, *, client=None, hiring_keywords: list[str] = (), competitors: list[str] = (),
-            max_pages: int = 8) -> Profile:
+def profile(domain: str, *, client=None, hiring_keywords: list[str] = (),
+            competitors: dict[str, tuple[str, ...]] | list[str] = (), max_pages: int = 8) -> Profile:
     """Profile one company website. Never raises for network or HTML problems.
 
     `client` is anything with `.get(url) -> Page` (a `PublicClient` by default; tests pass a stub).
     `max_pages` caps HTML pages fetched (homepage included); robots.txt and sitemaps are extra.
-    `competitors` is accepted for the caller's future use and currently ignored: a competitor's
-    script on the site already shows up as a TECH_STACK finding and the caller decides what it
-    means; a competitor named in customer-page copy says nothing about this account.
+    `competitors` maps a competitor's name to the script/widget hosts it puts on customer sites
+    (`gtm.competitors.signatures`): markup loading one gives COMPETITOR_CUSTOMER (+ TECH_STACK).
+    A plain list of names is ignored: a competitor named in page copy says nothing about the account.
     """
-    del competitors
+    hosts = dict(competitors) if isinstance(competitors, dict) else {}
     prof = Profile(domain=domain_of(domain))
     if not prof.domain:
         prof.errors.append("no domain")
@@ -639,14 +646,15 @@ def profile(domain: str, *, client=None, hiring_keywords: list[str] = (), compet
     own = client is None
     client = client or PublicClient()
     try:
-        _run(prof, client, [k.lower() for k in hiring_keywords if k], max_pages)
+        _run(prof, client, [k.lower() for k in hiring_keywords if k], max_pages, hosts)
     finally:
         if own:
             client.close()
     return prof
 
 
-def _run(prof: Profile, client, keywords: list[str], max_pages: int) -> None:
+def _run(prof: Profile, client, keywords: list[str], max_pages: int,
+         competitor_hosts: dict[str, tuple[str, ...]]) -> None:
     domain = prof.domain
     home = _fetch_home(client, domain, prof)
     if home is None:
@@ -688,10 +696,11 @@ def _run(prof: Profile, client, keywords: list[str], max_pages: int) -> None:
         docs.append((kind, doc))
         _discover(doc.links, domain, home.url, candidates)
 
-    _collect(prof, docs, keywords)
+    _collect(prof, docs, keywords, competitor_hosts)
 
 
-def _collect(prof: Profile, docs: list[tuple[str, _Doc]], keywords: list[str]) -> None:
+def _collect(prof: Profile, docs: list[tuple[str, _Doc]], keywords: list[str],
+             competitor_hosts: dict[str, tuple[str, ...]]) -> None:
     domain = prof.domain
     home_doc = docs[0][1]
     _apply_schema(home_doc, prof)
@@ -707,7 +716,7 @@ def _collect(prof: Profile, docs: list[tuple[str, _Doc]], keywords: list[str]) -
             continue
         seen_docs.add(id(doc))
         prof.page_text[doc.url] = doc.text
-        _detect_tech(doc, prof)
+        _detect_tech(doc, prof, competitor_hosts)
         if kind != "home":
             _apply_schema(doc, prof)
         for url, _ in doc.links:

@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: asks-before-paid-review-scrape
+expected_outcome: |
+  Saves Omnisend as a competitor, analyses it, runs competitors clients --estimate, states the price and asks before any --confirm; explains that review sites rarely name the reviewer's company.

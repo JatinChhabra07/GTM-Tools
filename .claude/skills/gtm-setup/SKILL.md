@@ -84,7 +84,8 @@ Save `budgets:` and `schedule:` (with `timezone`, e.g. `Asia/Kolkata`) if anythi
 
 ### 9. Learn the product, the targets and the clients
 If `missing` lists them, run these skills in order (each asks its own questions):
-`/gtm-onboard` → `/gtm-icp` → `/gtm-clients` → `/gtm-accounts`.
+`/gtm-onboard` → `/gtm-icp` → `/gtm-clients` → `/gtm-accounts` (and `/gtm-competitors` if the
+founder named competitors; optional).
 
 ### 10. Sending mailbox (the founder's terminal + Snov UI)
 Ask whether they have a **separate sending domain** (e.g. `getacme.com`, not the main domain) with

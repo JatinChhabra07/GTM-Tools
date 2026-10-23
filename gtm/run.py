@@ -2,7 +2,7 @@
 
  1 sync      replies, bounces, unsubscribes (if this fails: NO pushes this run)
  2 drain     approved + signature-valid + hash-matching + re-gated sequences -> Snov
- 3 collect   triggers (TAL accounts) + signals (social)
+ 3 collect   triggers (TAL accounts) + signals (social) + competitors (weekly, free parts only)
  4 resolve   explicit evidence only -> accounts; pre-score
  5 shortlist account-level AI panel picks the best of the pool (<= daily cap); nothing else is paid for
  6 enrich    personas -> email pattern-first -> verify (shortlisted accounts only)
@@ -162,11 +162,11 @@ def _resumable(conn: sqlite3.Connection, mode: str) -> sqlite3.Row | None:
 
 
 def _stages():
-    from gtm import enrich, handler, outbox, qualify, resolve, shortlist, signals, triggers, writer
+    from gtm import competitors, enrich, handler, outbox, qualify, resolve, shortlist, signals, triggers, writer
     return {
         "sync": handler.sync,
         "drain": outbox.drain,
-        "collect": lambda ctx: (triggers.collect(ctx), signals.collect(ctx)),
+        "collect": lambda ctx: (triggers.collect(ctx), signals.collect(ctx), competitors.collect(ctx)),
         "resolve": resolve.run,
         "shortlist": shortlist.run,
         "enrich": enrich.run,

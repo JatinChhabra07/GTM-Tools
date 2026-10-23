@@ -38,6 +38,10 @@ CATALOG: tuple[Code, ...] = (
          cost_class="paid", cost_note="Apify LinkedIn/X post search", freshness_days=21, rank=2),
     Code("SWITCHING", "intent", "A named person says they are moving off their current tool",
          cost_class="paid", cost_note="Apify LinkedIn/X post search", freshness_days=21, rank=2),
+    Code("COMPETITOR_REVIEW_NEGATIVE", "intent", "Someone at the account rated a competitor 3/5 or lower on "
+         "G2/Capterra/Trustpilot (only when the review names their employer)", value_type="text",
+         cost_class="paid", cost_note="Apify review-site scrapers, run only with `competitors clients --confirm`",
+         freshness_days=60, rank=3),
     Code("HIRING_FOR_PROBLEM", "intent", "Job post for a role whose work our product does or helps",
          cost_class="paid", cost_note="Apify LinkedIn jobs (also free from their careers page)",
          freshness_days=45, rank=3),
@@ -67,6 +71,10 @@ CATALOG: tuple[Code, ...] = (
     Code("SIZE_BAND", "firmographic", "Employee band", value_type="text", rank=20),
     Code("HQ_COUNTRY", "firmographic", "HQ country (ISO code)", value_type="text", rank=20),
     Code("TECH_STACK", "firmographic", "A tool they use", value_type="text", rank=15),
+    Code("COMPETITOR_CUSTOMER", "firmographic", "Uses a competitor: named on its customers page or "
+         "loads its script (value = the competitor)", value_type="text",
+         cost_note="free from competitor sites and site scripts; review sites and posts are paid extras "
+                   "that only run with `competitors clients --confirm`", rank=14),
     Code("SITE_PAGE_COUNT", "firmographic", "Pages in sitemap (size proxy)", value_type="num", rank=30,
          threshold_op=">=", threshold_value=20),
     # contact (system): who to email and whether we can

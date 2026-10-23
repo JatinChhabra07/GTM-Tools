@@ -302,6 +302,31 @@ Latest on PyPI: **3.3.0** (requires Python ≥3.11) (https://pypi.org/pypi/apify
 
 Whether `users/me/usage/monthly` breaks out pay-per-event actor charges under a specific service key, and the key name, are **UNCONFIRMED**. The example response's `monthlyServiceUsage` is empty `{}`. For "money spent this month", use `limits().current.monthly_usage_usd`.
 
+### 2.4 Review-site actors for the competitor engine (D2, read 2026-10-23)
+
+Read from `api.apify.com/v2/acts/<id>` (last `pricingInfos` entry) and `/builds/default` (input
+schema, README, dataset schema) with wigolo. **Not live-tested** (no Apify key yet): built against
+`gtm/fake.py`; the first `competitors clients --confirm` with a key is the live check.
+
+**Finding that changed the design: none of these sites publishes the reviewer's employer name.**
+G2 and Capterra show role, industry and company size only (zhorex's FAQ: "Can I get reviewer email
+or full company name? No."); Trustpilot reviewers are consumers and every `company*` field there is
+the reviewed business. So reviews feed sourced complaint/praise themes into the brief, and a review
+becomes an account only when its own text names the reviewer's company (an isolated read decides,
+"never infer"). `COMPETITOR_REVIEW_NEGATIVE` will fire rarely; the skill says so before paying.
+
+| site | chosen actor (`gtm/sources/apify.py`) | why | price (FREE tier) | input we send | fields we read |
+|---|---|---|---|---|---|
+| G2 | `factden/g2-reviews-scraper` | 284 users, 99.7% 30-day success; ~4x cheaper than `zhorex/g2-reviews-scraper` ($0.015/review); industry as text (zhorex: numeric code) | `apify-default-dataset-item` $0.004/review + `apify-actor-start` $0.005/run | `{"mode":"reviews","startUrls":[url],"maxReviewsPerProduct":n,"sortReviews":"newest"}` | `reviewId`, `reviewUrl`, `overallRating` (1-5), `submittedAt` (ISO), `reviewTitle`, `pros`/`cons`/`problemsSolved`, `reviewerRole`, `reviewerIndustry`, `companySize` |
+| Capterra | `zen-studio/capterra-reviews-scraper` (not on the plan's list) | most used (565 users, 98.5%), returns a direct `reviewUrl`, clear per-review price. `azzouzana/...` is cheaper but has no review URL and a 5-review cap on the free plan; `kawsar/...` has no URL or size; `imadjourney/...` has no per-result price and looks abandoned | `review-scraped` $0.00199 + start $0.005 | `{"productUrl":url,"maxResults":n,"sort":"MOST_RECENT"}` | `reviewId`, `reviewUrl`, `overallRating`, `writtenOn` ("August 20, 2026"), `title`, `generalComments`/`prosText`/`consText`, `reviewer.{jobTitle,industry,companySize}` |
+| Trustpilot | `data_xplorer/trustpilot-reviews-scraper` | half the price of `unfenced-group/trustpilot-scraper` (which also defaults `domain` to revolut.com), clean schema | `apify-default-dataset-item` $0.00025 | `{"urls":[{"url":url}],"maxReviews":n,"sort":"recency"}` | `reviewId`, `reviewUrl`, `rating`, `publishedDate`, `title`, `text` |
+
+UNCONFIRMED: `isDeprecated` for zen-studio (seen only in store search, notice NONE); whether
+factden charges its Products summary rows in reviews mode; data_xplorer's proxy needs. Every run
+still carries `max_total_charge_usd`, so a surprise charge is capped. Competitor review pages: G2
+and Capterra URLs come from wigolo search results whose slug matches the competitor's name;
+Trustpilot's is built from the domain (`trustpilot.com/review/<domain>`).
+
 ---
 
 ## 3. last30days skill (mvanhorn/last30days-skill)

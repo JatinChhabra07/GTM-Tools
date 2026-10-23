@@ -868,6 +868,28 @@ any India sends (`docs/compliance.md`).
   no personal numbers, nothing automated.
 - **Skill evals are written, not yet run**: they're real, billed model runs; run them with
   `claude plugin eval .` from each skill directory.
+- **D2 competitor engine (built 2026-10-23)**, differences from §15.1 E2:
+  - Review sites don't publish the reviewer's employer (G2/Capterra: role, industry, size only;
+    Trustpilot: consumers), so paid reviews mostly feed sourced complaint/praise themes into the
+    brief; a review becomes an account only when its text names the reviewer's company.
+    `COMPETITOR_REVIEW_NEGATIVE` (intent, paid, fresh 60 days, theme-only reference) fires rarely.
+    Actors: `factden/g2-reviews-scraper`, `zen-studio/capterra-reviews-scraper` (not on the list
+    above: the listed ones lack a review URL or a clear price), `data_xplorer/trustpilot-reviews-scraper`
+    (`docs/tools.md` §2.4); not live-tested (no Apify key).
+  - `COMPETITOR_CUSTOMER` is back in the catalog (firmographic, free; paid sources add to it only with
+    `--confirm`). Its latest value is kept per competitor (several sources can't hide each other). It
+    is not a fresh signal, so such an account is emailed only once an intent/trigger appears.
+  - Accounts found here have `source = 'competitor'` (state migration v6 rebuilds `accounts`, the
+    only way to widen its CHECK; `db.migrate` turns foreign keys off for a migration that starts with
+    `-- foreign_keys=OFF`, SQLite's 12-step procedure).
+  - Tech detection: a target site loading a competitor's own script host (seen in `src=` on its
+    pages, its own subdomain only) or the profiler's built-in fingerprint for a known tool.
+  - Weekly free pass in full runs (watermark `competitors_weekly`): watched pricing/feature pages
+    (wigolo diff, no model) and customer pages (≤ 2 isolated calls per competitor). Paid sources run
+    only from `gtm competitors clients --confirm`, capped by `tal.build_budget_usd`.
+  - Competitor domains are resolved with one single-string wigolo search per name: in the live check
+    the employer resolver's two-query form ("<name> official website" + "<name> company") returned
+    unrelated pages for "Omnisend".
 
 ### Independent send-safety review (2026-10-23), all fixed with regression tests (`tests/test_send_safety.py`)
 - **C1 geo fallback:** an unrecognised lead location silently used the company's HQ (an EU lead at a

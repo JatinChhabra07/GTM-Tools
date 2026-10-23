@@ -301,12 +301,44 @@ def drop_site_facts(slug: str) -> int:
     return len(rows)
 
 
+def replace_competitor_facts(slug: str, competitor: str, items: list[dict]) -> dict:
+    """A competitor re-analysis replaces THAT competitor's facts ([{text, source_url}]); every one
+    carries its source page (plan §15.1 E2). Other competitors and categories are untouched."""
+    be = backend(slug)
+    old = [r for r in be.all({"category": "competitor"}) if r.get("competitor") == competitor]
+    for r in old:
+        be.delete(r["id"])
+    out = {"removed": len(old), "added": 0, "duplicate": 0, "rejected": []}
+    for i, item in enumerate(items):
+        if not str(item.get("source_url") or "").startswith("http"):
+            out["rejected"].append({"index": i, "reason": "no source_url"})
+            continue
+        try:
+            res = add(slug, "competitor", item["text"], source_url=item["source_url"], extra={"competitor": competitor})
+            out[res["status"]] += 1
+        except (KBError, KeyError) as e:
+            out["rejected"].append({"index": i, "reason": str(e)})
+    return out
+
+
+def competitor_files(slug: str) -> list[dict]:
+    d = product_config_dir(slug) / "knowledge" / "competitors"
+    out = []
+    for p in sorted(d.glob("*.json")) if d.exists() else []:
+        try:
+            out.append(json.loads(p.read_text()))
+        except (OSError, ValueError):
+            continue
+    return out
+
+
 def extracted_path(slug: str) -> Path:
     return product_config_dir(slug) / "knowledge" / "extracted.jsonl"
 
 
 def rebuild(slug: str) -> dict:
-    """Re-create the KB from files: knowledge/extracted.jsonl + facts.yaml + learnings.jsonl."""
+    """Re-create the KB from files: knowledge/extracted.jsonl + facts.yaml + learnings.jsonl +
+    knowledge/competitors/*.json."""
     be = backend(slug)
     for r in be.all({}):
         be.delete(r["id"])
@@ -319,6 +351,10 @@ def rebuild(slug: str) -> dict:
     if learn.exists():
         items = [json.loads(line) for line in learn.read_text().splitlines() if line.strip()]
         out["learning"] = ingest(slug, [{"category": "learning", **i} for i in items], authority="auto")
+    for comp in competitor_files(slug):
+        if comp.get("name"):
+            out.setdefault("competitor", {})[comp["name"]] = replace_competitor_facts(
+                slug, comp["name"], comp.get("facts", []) + comp.get("review_facts", []))
     return out
 
 
