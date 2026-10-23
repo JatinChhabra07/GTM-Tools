@@ -1,5 +1,9 @@
 {
- "error": "invalid_input",
- "error_reason": "old.markdown or old.url is required",
- "stage": "diff"
+ "changed": true,
+ "summary": {
+  "added_lines": 0,
+  "removed_lines": 0,
+  "modified_lines": 1,
+  "total_changed_chars": 94
+ }
 }

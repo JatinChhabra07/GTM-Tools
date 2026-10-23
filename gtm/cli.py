@@ -24,6 +24,7 @@ keys_app = typer.Typer(no_args_is_help=True, help="Approval signing keys (PIN)")
 setup_app = typer.Typer(no_args_is_help=True, help="What the setup wizard still needs")
 config_app = typer.Typer(no_args_is_help=True, help="Read/merge product.yaml")
 llm_app = typer.Typer(no_args_is_help=True, help="Isolated Claude calls")
+tools_app = typer.Typer(no_args_is_help=True, help="Install/verify external tools (last30days, Qdrant, wigolo)")
 kb_app = typer.Typer(no_args_is_help=True, help="Per-product knowledge base (mem0)")
 app.add_typer(product_app, name="product")
 app.add_typer(secrets_app, name="secrets")
@@ -32,6 +33,7 @@ app.add_typer(setup_app, name="setup")
 app.add_typer(config_app, name="config")
 app.add_typer(llm_app, name="llm")
 app.add_typer(kb_app, name="kb")
+app.add_typer(tools_app, name="tools")
 
 
 def _fail(msg: str, code: int = 1) -> None:
@@ -195,6 +197,56 @@ def llm_ping() -> None:
     typer.echo(json.dumps({"result": res.text, "model": res.model, "duration_ms": res.duration_ms}))
 
 
+# ---------------------------------------------------------------- tools
+
+@tools_app.command("install")
+def tools_install() -> None:
+    """Install everything the automation runs on: last30days (pinned), Qdrant, the embedder."""
+    from gtm import kb
+    from gtm.sources import last30days
+    out: dict = {}
+    try:
+        out["last30days"] = last30days.install()
+    except last30days.Last30Error as e:
+        out["last30days"] = {"error": str(e)}
+    try:
+        out["qdrant"] = kb.ensure_qdrant()
+    except kb.KBError as e:
+        out["qdrant"] = {"error": str(e)}
+    try:
+        from sentence_transformers import SentenceTransformer
+        SentenceTransformer(kb.EMBED_MODEL)  # downloads once into the HF cache
+        out["embedder"] = kb.EMBED_MODEL
+    except Exception as e:  # network or disk: report, don't crash the installer
+        out["embedder"] = {"error": str(e)[:300]}
+    typer.echo(json.dumps(out, indent=2))
+    if any(isinstance(v, dict) and "error" in v for v in out.values()):
+        raise typer.Exit(1)
+
+
+@tools_app.command("check")
+def tools_check() -> None:
+    """Live tool truth: one wigolo search/fetch/diff from Python and one last30days run."""
+    from gtm.sources import last30days, wigolo
+    out: dict = {}
+    try:
+        res = wigolo.search(["b2b saas pricing page"], max_results=2)
+        out["wigolo_search"] = {"ok": bool(res.get("results")), "results": len(res.get("results", []))}
+        page = wigolo.fetch("https://example.com", max_content_chars=300)
+        out["wigolo_fetch"] = {"ok": bool(page.get("markdown"))}
+        d = wigolo.diff({"markdown": "Plan: $49"}, {"markdown": "Plan: $59"}, output="summary")
+        out["wigolo_diff"] = {"ok": d.get("changed") is True}
+    except Exception as e:
+        out["wigolo"] = {"ok": False, "error": str(e)[:300]}
+    try:
+        exp = last30days.run("crm for small business", timeout=240)
+        out["last30days"] = {"ok": True, "items": len(last30days.items(exp)),
+                             "sources": exp.get("source_status", {})}
+    except Exception as e:
+        out["last30days"] = {"ok": False, "error": str(e)[:300]}
+    typer.echo(json.dumps(out, indent=2, default=str))
+
+
 # ---------------------------------------------------------------- knowledge base
 
 def _kb():
@@ -272,6 +324,11 @@ def kb_stats(product: str = typer.Option(...)) -> None:
 
 # ---------------------------------------------------------------- setup + doctor
 
+def _qdrant_ready() -> bool:
+    from gtm import kb
+    return kb.qdrant_ready()
+
+
 def _tool_checks() -> dict[str, dict]:
     """Every tool/skill the plan relies on (CLAUDE.md 'Tool & skill map')."""
     home = Path.home()
@@ -294,7 +351,7 @@ def _tool_checks() -> dict[str, dict]:
             return None
         return any(line.split(":")[0].strip().endswith(name) for line in out.splitlines())
 
-    last30 = Path(os.environ.get("GTM_LAST30DAYS_DIR", data_dir() / "vendor" / "last30days-skill"))
+    from gtm.sources import last30days
     try:
         llm.probe_isolation()
         isolation = True
@@ -305,9 +362,10 @@ def _tool_checks() -> dict[str, dict]:
         "wigolo_mcp": {"ok": mcp_listed("wigolo"), "used_for": "crawl product site, web/news search, page diffs"},
         "graph_engineering_skill": {"ok": skill("graph-engineering"), "used_for": "qualification graph pattern"},
         "human_voice_skill": {"ok": skill("human-voice"), "used_for": "anti-AI-tell rules for the humanize pass"},
-        "last30days_engine": {"ok": (last30 / "skills" / "last30days" / "scripts").exists(),
-                              "used_for": "Reddit/HN pain language (installed in Phase 0C)"},
-        "docker": {"ok": shutil.which("docker") is not None, "used_for": "Qdrant server for mem0 (Phase 0C)"},
+        "last30days_engine": {"ok": last30days.installed(),
+                              "used_for": "Reddit/HN pain language (bin/gtm tools install)"},
+        "docker": {"ok": shutil.which("docker") is not None, "used_for": "runs the Qdrant server"},
+        "qdrant": {"ok": _qdrant_ready(), "used_for": "mem0 knowledge base (bin/gtm kb up)"},
         "apify_key": {"ok": secrets.status()["APIFY_API_TOKEN"] == "set", "used_for": "LinkedIn/X, people search"},
         "snov_keys": {"ok": secrets.status()["SNOV_CLIENT_ID"] == "set"
                       and secrets.status()["SNOV_CLIENT_SECRET"] == "set",

@@ -84,7 +84,8 @@ def fetch(url: str, **kw) -> dict:
     return call("fetch", {"url": url, **kw})
 
 
-def diff(old: str, new: str, **kw) -> dict:
+def diff(old: dict, new: dict, **kw) -> dict:
+    """old/new: {"markdown": ...} or {"url": ...} (wigolo's diff contract)."""
     return call("diff", {"old": old, "new": new, **kw})
 
 

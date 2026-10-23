@@ -1,0 +1,202 @@
+{
+  "artifacts": {
+    "corpus_in_export": false,
+    "grounding": [],
+    "hiring_signals_mode": false,
+    "plan_source": "deterministic",
+    "pre_research_flags_present": false,
+    "resolved": {
+      "context": "",
+      "entity": "shopify abandoned cart",
+      "github_repos": [],
+      "github_user": "",
+      "subreddits": [],
+      "trustpilot_domain": "",
+      "x_handle": ""
+    }
+  },
+  "clusters": [
+    {
+      "candidate_ids": [
+        "https://reddit.com/r/example/comments/shopify-abandoned-cart-1"
+      ],
+      "cluster_id": "cluster-1",
+      "representative_ids": [
+        "https://reddit.com/r/example/comments/shopify-abandoned-cart-1"
+      ],
+      "score": 43.439180327868854,
+      "sources": [
+        "reddit"
+      ],
+      "title": "shopify abandoned cart discussion thread"
+    }
+  ],
+  "errors_by_source": {},
+  "freshness_verdicts": [],
+  "generated_at": "2026-10-23T09:20:09.095873+00:00",
+  "items_by_source": {
+    "hackernews": [],
+    "reddit": [
+      {
+        "body": "shopify abandoned cart discussion thread\nCommunity discussion about shopify abandoned cart.\nStrong firsthand feedback from shopify abandoned cart users.",
+        "container": "example",
+        "date_confidence": "high",
+        "engagement": {
+          "num_comments": 48,
+          "score": 120,
+          "upvote_ratio": 0.91
+        },
+        "engagement_score": 55,
+        "freshness": 89,
+        "item_id": "R1",
+        "local_rank_score": 0.5505000000000001,
+        "local_relevance": 0.42,
+        "metadata": {
+          "comment_insights": [],
+          "top_comments": [
+            {
+              "excerpt": "Strong firsthand feedback from shopify abandoned cart users."
+            }
+          ]
+        },
+        "published_at": "2026-10-18",
+        "relevance_hint": 0.82,
+        "snippet": "Strong firsthand feedback from shopify abandoned cart users.",
+        "source": "reddit",
+        "source_quality": 0.6,
+        "title": "shopify abandoned cart discussion thread",
+        "url": "https://reddit.com/r/example/comments/shopify-abandoned-cart-1",
+        "why_relevant": "Mock Reddit result"
+      }
+    ]
+  },
+  "library_context": [],
+  "provider_runtime": {
+    "planner_model": "gemini-3.1-flash-lite",
+    "reasoning_provider": "gemini",
+    "rerank_model": "gemini-3.1-flash-lite"
+  },
+  "query_plan": {
+    "cluster_mode": "none",
+    "freshness_mode": "evergreen_ok",
+    "intent": "concept",
+    "notes": [
+      "fallback-plan"
+    ],
+    "raw_topic": "shopify abandoned cart",
+    "source_weights": {
+      "hackernews": 0.5,
+      "reddit": 0.5
+    },
+    "subqueries": [
+      {
+        "label": "primary",
+        "ranking_query": "What recent evidence from the last 30 days is most relevant to shopify abandoned cart?",
+        "search_query": "shopify abandoned cart",
+        "sources": [
+          "reddit",
+          "hackernews"
+        ],
+        "weight": 1.0
+      }
+    ]
+  },
+  "range_from": "2026-09-23",
+  "range_to": "2026-10-23",
+  "ranked_candidates": [
+    {
+      "candidate_id": "https://reddit.com/r/example/comments/shopify-abandoned-cart-1",
+      "cluster_id": "cluster-1",
+      "engagement": 55,
+      "explanation": "fallback-local-score",
+      "final_score": 43.439180327868854,
+      "freshness": 89,
+      "fun_explanation": "heuristic-fallback",
+      "fun_score": 5.7,
+      "item_id": "R1",
+      "local_relevance": 0.42,
+      "metadata": {
+        "provenance": [
+          {
+            "item_id": "R1",
+            "native_rank": 1,
+            "source": "reddit",
+            "subquery_label": "primary"
+          }
+        ],
+        "range_from": "2026-09-23",
+        "range_to": "2026-10-23",
+        "rerank_provenance": "fallback"
+      },
+      "native_ranks": {
+        "primary:reddit": 1
+      },
+      "rerank_score": 35.4,
+      "rrf_score": 0.00819672131147541,
+      "snippet": "Strong firsthand feedback from shopify abandoned cart users.",
+      "source": "reddit",
+      "source_items": [
+        {
+          "body": "shopify abandoned cart discussion thread\nCommunity discussion about shopify abandoned cart.\nStrong firsthand feedback from shopify abandoned cart users.",
+          "container": "example",
+          "date_confidence": "high",
+          "engagement": {
+            "num_comments": 48,
+            "score": 120,
+            "upvote_ratio": 0.91
+          },
+          "engagement_score": 55,
+          "freshness": 89,
+          "item_id": "R1",
+          "local_rank_score": 0.5505000000000001,
+          "local_relevance": 0.42,
+          "metadata": {
+            "comment_insights": [],
+            "top_comments": [
+              {
+                "excerpt": "Strong firsthand feedback from shopify abandoned cart users."
+              }
+            ]
+          },
+          "published_at": "2026-10-18",
+          "relevance_hint": 0.82,
+          "snippet": "Strong firsthand feedback from shopify abandoned cart users.",
+          "source": "reddit",
+          "source_quality": 0.6,
+          "title": "shopify abandoned cart discussion thread",
+          "url": "https://reddit.com/r/example/comments/shopify-abandoned-cart-1",
+          "why_relevant": "Mock Reddit result"
+        }
+      ],
+      "source_quality": 0.6,
+      "sources": [
+        "reddit"
+      ],
+      "subquery_labels": [
+        "primary"
+      ],
+      "title": "shopify abandoned cart discussion thread",
+      "url": "https://reddit.com/r/example/comments/shopify-abandoned-cart-1"
+    }
+  ],
+  "source_status": {
+    "hackernews": {
+      "at": "2026-10-23T09:20:09.095375Z",
+      "attempted": true,
+      "items_returned": 0,
+      "source": "hackernews",
+      "state": "no-results"
+    },
+    "reddit": {
+      "at": "2026-10-23T09:20:09.095597Z",
+      "attempted": true,
+      "items_returned": 1,
+      "source": "reddit",
+      "state": "ok"
+    }
+  },
+  "topic": "shopify abandoned cart",
+  "warnings": [
+    "Evidence is thin for this topic."
+  ]
+}
