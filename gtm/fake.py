@@ -112,6 +112,13 @@ def wigolo(name: str, args: dict):
         return {"results": results}
     if name == "fetch":
         return {"url": args["url"], "markdown": "fake page"}
+    if name == "crawl":
+        root = args["url"].rstrip("/")
+        body = "Acme recovers abandoned Shopify carts with plain follow-up emails. " * 8
+        return {"pages": [{"url": f"{root}{p}", "title": t, "markdown": f"# {t}\n\n{body}"}
+                          for p, t in (("/", "Acme"), ("/pricing", "Pricing"), ("/customers", "Customers"),
+                                       ("/blog", "Blog"))] + [{"url": "https://elsewhere.example/", "title": "x",
+                                                                "markdown": body}]}
     if name == "diff":
         old, new = args["old"].get("markdown", ""), args["new"].get("markdown", "")
         return {"changed": old != new, "summary": {"total_changed_chars": abs(len(new) - len(old)) + (old != new) * 500}}
@@ -182,6 +189,9 @@ def _apify_items(kind: str) -> list[dict]:
 class FakeSnov:
     def __init__(self):
         self._tasks: dict[str, list] = {}
+
+    def balance(self):
+        return {"balance": "100.00"}
 
     def verify_start(self, emails):
         h = f"v{len(self._tasks)}"

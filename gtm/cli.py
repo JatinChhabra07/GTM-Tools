@@ -225,10 +225,21 @@ def tools_install() -> None:
 
 
 @tools_app.command("check")
-def tools_check() -> None:
+def tools_check(paid: bool = typer.Option(False, help="also check the Apify and Snov keys (free reads, no credits)")) -> None:
     """Live tool truth: one wigolo search/fetch/diff from Python and one last30days run."""
     from gtm.sources import last30days, wigolo
     out: dict = {}
+    if paid:
+        from gtm.sources import apify, snov
+        try:
+            spend = apify.client().month_spend_usd()  # None = the key didn't work
+            out["apify"] = {"ok": spend is not None, "month_spend_usd": spend}
+        except Exception as e:
+            out["apify"] = {"ok": False, "error": f"{type(e).__name__}: {str(e)[:200]}"}
+        try:
+            out["snov"] = {"ok": True, "balance": snov.client().balance()}
+        except Exception as e:
+            out["snov"] = {"ok": False, "error": f"{type(e).__name__}: {str(e)[:200]}"}
     try:
         res = wigolo.search(["b2b saas pricing page"], max_results=2)
         out["wigolo_search"] = {"ok": bool(res.get("results")), "results": len(res.get("results", []))}
@@ -401,7 +412,7 @@ def setup_status(product: str = typer.Option(None)) -> None:
             if not cfg.voice.postal_address:
                 missing.append("voice.postal_address (US law needs it before sending)")
             if not cfg.sending.mailboxes:
-                missing.append("sending.mailboxes (Phase 0C: gtm mailbox add)")
+                missing.append("sending.mailboxes (founder runs `bin/gtm mailbox add` in his terminal)")
             clients_csv = product_config_dir(slug) / "clients.csv"
             if not clients_csv.exists():
                 missing.append(f"clients.csv at {clients_csv}")

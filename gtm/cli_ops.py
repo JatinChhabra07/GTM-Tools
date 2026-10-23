@@ -36,6 +36,7 @@ def register(app: typer.Typer) -> None:
     app.command("report")(report_cmd)
     app.command("warmup")(warmup_cmd)
     app.command("forget")(forget_cmd)
+    app.command("crawl")(crawl_cmd)
     for name, sub in (("mailbox", mailbox_app), ("snov", snov_app), ("sending", sending_app),
                       ("autosend", autosend_app), ("accounts", accounts_app), ("signals", signals_app),
                       ("schedule", schedule_app), ("manual", manual_app)):
@@ -61,6 +62,15 @@ def _unlock():
         except signing.WrongPin:
             typer.echo("wrong PIN")
     _fail("3 wrong PINs")
+
+
+def crawl_cmd(product: str = typer.Option(...),
+              url: str = typer.Option(None, help="default: the product's own website"),
+              max_pages: int = typer.Option(25, min=1, max=60)) -> None:
+    """Read the product website into products/<slug>/knowledge/pages/ (wigolo; Firecrawl fallback)."""
+    from gtm import site_crawl
+    cfg = config.load(product)
+    _echo(site_crawl.crawl(product, url or str(cfg.product.url), max_pages=max_pages))
 
 
 def _echo(obj) -> None:

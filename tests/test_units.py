@@ -195,3 +195,14 @@ def test_url_never_becomes_a_company_name(product):
     for (name,) in product.execute("SELECT name FROM accounts WHERE domain IN ('shopco.example', 'brandly.example')"):
         assert not looks_like_url(name)  # the profiler's real name replaced the placeholder
     assert all(r[0] == "[]" for r in product.execute("SELECT validator_json FROM sequences"))
+
+
+def test_crawl_writes_ranked_same_site_pages(product):
+    from gtm import site_crawl
+    rep = site_crawl.crawl(SLUG, "https://acme.example/", max_pages=3)
+    assert rep["engine"] == "wigolo" and rep["pages"] == 3
+    urls = [p["url"] for p in rep["index"]]
+    assert urls[0] == "https://acme.example/" and "https://acme.example/pricing" in urls
+    assert all("elsewhere" not in u for u in urls)
+    first = (site_crawl.pages_dir(SLUG) / rep["index"][0]["file"]).read_text()
+    assert first.startswith("<!-- source: https://acme.example/")
