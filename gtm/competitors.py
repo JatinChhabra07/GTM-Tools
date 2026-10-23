@@ -133,14 +133,16 @@ def signatures(cfg: ProductConfig) -> dict[str, tuple[str, ...]]:
     From the brief's `script_hosts` (seen in `src=` on its own pages, always its own subdomain), plus
     the profiler's built-in fingerprint when the competitor is a known tool (e.g. Klaviyo)."""
     from gtm.profile import TECH_SIGNATURES
-    builtin = {k.lower(): v for k, v in TECH_SIGNATURES.items()}
+    builtin = {_label(k): v for k, v in TECH_SIGNATURES.items()}
     out: dict[str, tuple[str, ...]] = {}
     briefs = {(b.get("entry") or "").lower(): b for b in load_all(cfg.product.slug)}
     for entry in cfg.signals.competitors:
         b = briefs.get(entry.strip().lower(), {})
         name = b.get("name") or entry.strip()
         hosts = [h["host"] for h in b.get("script_hosts", []) if h.get("host")]
-        hosts += list(builtin.get(name.lower(), ()))
+        domain = b.get("domain") or (domain_of(entry) if "." in entry else "")
+        for key in (_label(name), _label(domain.split(".")[0]) if domain else ""):
+            hosts += list(builtin.get(key, ())) if key else []
         if hosts:
             out[name] = tuple(dict.fromkeys(hosts))
     return out
@@ -236,7 +238,8 @@ def review_pages(name: str, domain: str) -> dict[str, str]:
     out: dict[str, str] = {}
     labels = {_label(name), _label(domain.split(".")[0])} - {""}
     try:
-        res = wigolo.search([f"{name} reviews G2", f"{name} reviews Capterra"], max_results=10)
+        label = domain.split(".")[0] if name == domain else name  # "gorgias", not "gorgias.com"
+        res = wigolo.search([f"{label} reviews G2", f"{label} reviews Capterra"], max_results=10)
         results = res.get("results", []) if isinstance(res, dict) else []
     except Exception:
         results = []

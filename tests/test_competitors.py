@@ -223,6 +223,12 @@ def test_tech_detection_records_competitor_customer(world):
         ("widgetfan.example", "RivalCart", "https://widgetfan.example/")]
     tech = {r["value_text"] for r in obs_rows(conn, "TECH_STACK") if r["account_domain"] == "widgetfan.example"}
     assert "RivalCart" in tech
+    # a known tool needs no brief: the profiler's own fingerprint is used (by name or by domain)
+    cfg = config.load(SLUG)
+    cfg.signals.competitors = ["RivalCart", "klaviyo.com", "Gorgias"]
+    sig = competitors.signatures(cfg)
+    assert sig["RivalCart"] == ("widget.rivalcart.example",)
+    assert "static.klaviyo.com" in sig["klaviyo.com"] and "gorgias.chat" in sig["Gorgias"]
 
 
 def test_weekly_free_pass_in_full_runs(world):
