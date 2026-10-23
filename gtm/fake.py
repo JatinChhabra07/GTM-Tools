@@ -63,6 +63,7 @@ def _html(domain: str, path: str) -> str | None:
                 f"<script src='https://{c['tech'].split(' ')[0] if c['tech'] else 'example.org'}/x.js'></script>"
                 + "".join(f"<script src='https://{t}/a.js'></script>" for t in c["tech"].split()[1:]) +
                 f"</head><body><a href='/about'>About</a><a href='/careers'>Careers</a><a href='/contact'>Contact</a>"
+                f"<a href='tel:+1 (415) 555-0100'>Call us</a>"
                 f"<p>{c['name']} sells things online.</p></body></html>")
     if path == "/about":
         people = "".join(f"<div><h3>{n}</h3><p>{t}</p></div>" for n, t in c["people"])
@@ -111,6 +112,11 @@ def wigolo(name: str, args: dict):
         results.append({"url": "https://www.g2.com/categories/x", "title": "Top 10 tools", "snippet": "list"})
         return {"results": results}
     if name == "fetch":
+        if "/lists/" in args["url"]:  # a "top brands" article naming fake companies
+            md = "# Top D2C brands\n" + "\n".join(f"{i}. [{c['name']}](https://{d}/?ref=list)"
+                                                  for i, (d, c) in enumerate(COMPANIES.items(), 1))
+            return {"url": args["url"], "markdown": md + "\nFollow us [here](https://twitter.com/lists)",
+                    "links": ["https://twitter.com/lists", "https://www.listsite.example/about"]}
         return {"url": args["url"], "markdown": "fake page"}
     if name == "crawl":
         root = args["url"].rstrip("/")
@@ -274,7 +280,8 @@ def llm_response(prompt_id: str, payload: dict, blocks: dict) -> dict:
         return {"phrases": ["carts die at the shipping step"]}
     if prompt_id == "classify_candidates":
         urls = re.findall(r"URL: (\S+)", blocks.get("search_results", ""))
-        return {"companies": [{"url": u, "is_company_site": "g2.com" not in u, "name": u} for u in urls]}
+        return {"companies": [{"url": u, "is_company_site": "g2.com" not in u and "/lists/" not in u,
+                               "is_company_list": "/lists/" in u, "name": u} for u in urls]}
     if prompt_id == "resolve_employers":
         out = []
         for emp, text in _ids(blocks, "results:"):

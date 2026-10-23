@@ -12,6 +12,7 @@ import sqlite3
 from datetime import timedelta
 
 from gtm import observations as obs
+from gtm.sources import optional
 from gtm.util import domain_of, now, now_iso, sha256
 
 EXEC_WORDS = ("chief", "ceo", "cto", "cmo", "coo", "cfo", "cro", "founder", "president", "vp ",
@@ -38,9 +39,11 @@ def apply_profile(conn: sqlite3.Connection, prof, *, run_id: str | None, detect_
     if prof.ok:
         conn.execute("UPDATE accounts SET profile_checked_at = ?, "
                      "name = CASE WHEN name = domain AND ? IS NOT NULL THEN ? ELSE name END, "
-                     "linkedin_url = COALESCE(linkedin_url, ?), hq_country = COALESCE(hq_country, ?) "
+                     "linkedin_url = COALESCE(linkedin_url, ?), hq_country = COALESCE(hq_country, ?), "
+                     "phone = COALESCE(?, phone), phone_evidence = CASE WHEN ? IS NULL THEN phone_evidence ELSE ? END "
                      "WHERE domain = ?",
-                     (now_iso(), prof.company_name, prof.company_name, prof.linkedin_url, prof.hq_country, domain))
+                     (now_iso(), prof.company_name, prof.company_name, prof.linkedin_url, prof.hq_country,
+                      prof.company_phone, prof.company_phone, prof.company_phone_url, domain))
     else:
         conn.execute("UPDATE accounts SET profile_checked_at = ? WHERE domain = ?", (now_iso(), domain))
     if detect_changes and had_profile and prof.ok:
@@ -118,7 +121,7 @@ def _changed_chars(old: str, new: str) -> int:
 def collect(ctx) -> None:
     _reprofile(ctx)
     if ctx.mode == "full" or ctx.mode == "refresh":
-        _jobs(ctx)
+        optional(ctx, "LinkedIn jobs", _jobs, ctx)
     if ctx.mode == "full":
         _news(ctx)
 

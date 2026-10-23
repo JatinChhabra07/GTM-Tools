@@ -13,6 +13,7 @@ import re
 from gtm import kb
 from gtm import observations as obs
 from gtm.schemas import PainPhrases, PostLabels
+from gtm.sources import optional
 from gtm.util import has_pii, now, now_iso, sha1
 
 INTENT_CODES = ("ASKS_FOR_SOLUTION", "COMPETITOR_PAIN", "SWITCHING", "HIRING_FOR_PROBLEM")
@@ -40,10 +41,10 @@ def store_post(conn, *, source: str, url: str, text: str, posted_at: str | None,
 def collect(ctx) -> None:
     codes = obs.confirmed_codes(ctx.conn, "intent")
     if codes & {"ASKS_FOR_SOLUTION", "COMPETITOR_PAIN", "SWITCHING"}:
-        _linkedin(ctx)
+        optional(ctx, "LinkedIn posts", _linkedin, ctx)
         if ctx.mode == "full":
-            _x(ctx)
-            _instagram(ctx)
+            optional(ctx, "X posts", _x, ctx)
+            optional(ctx, "Instagram posts", _instagram, ctx)
     label(ctx)
     if ctx.mode == "full":
         pain_language(ctx)

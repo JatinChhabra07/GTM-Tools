@@ -10,6 +10,7 @@ import re
 from gtm import accounts
 from gtm import observations as obs
 from gtm.schemas import EmployerResolutions
+from gtm.sources import optional
 from gtm.util import domain_of, now, parse_iso, sha1
 
 MAX_EMPLOYERS_PER_RUN = 10
@@ -121,8 +122,8 @@ def _new_accounts(ctx) -> None:
         "('dropped','client','near_miss') AND EXISTS (SELECT 1 FROM observations o JOIN signal_codes c ON "
         "c.code = o.signal_code WHERE o.account_domain = a.domain AND c.kind IN ('intent','trigger')) LIMIT 25")]
     if need and ctx.budget.apify_left > 0.2:
-        accounts.linkedin_enrich(ctx.conn, ctx.cfg, need, budget=ctx.budget, run_id=ctx.run_id,
-                                 ref_get=lambda: ctx.get_ref("resolve"),
-                                 ref_set=lambda k, v: ctx.set_ref("resolve", k, v))
+        optional(ctx, "LinkedIn company data", accounts.linkedin_enrich, ctx.conn, ctx.cfg, need,
+                 budget=ctx.budget, run_id=ctx.run_id, ref_get=lambda: ctx.get_ref("resolve"),
+                 ref_set=lambda k, v: ctx.set_ref("resolve", k, v))
     res = accounts.rescore_accounts(ctx.conn, ctx.cfg)
     ctx.count("accounts_scored", res["scored"])

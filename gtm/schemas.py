@@ -35,6 +35,7 @@ class Candidate(Out):
     domain: str | None = None
     name: str | None = None
     is_company_site: bool = False
+    is_company_list: bool = False  # a page naming many companies (top-N list, directory): mined next
     reason: str = ""
 
 

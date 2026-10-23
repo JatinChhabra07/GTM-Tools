@@ -258,3 +258,54 @@ def test_eu_uk_cannot_be_unblocked(product):
         bad = {**cfg, "geo_policy": {**cfg["geo_policy"], key: {"status": "allowed"}}}
         with pytest.raises(Exception):
             config.ProductConfig.model_validate(bad)
+
+
+def test_company_lists_are_mined(product, monkeypatch):
+    """Live search mostly returns top-N lists, not homepages: their companies must still come through."""
+    from gtm import accounts, llm
+    from gtm.sources import wigolo
+    entries = accounts.list_entries("https://www.listsite.example/lists/top-d2c", "Top D2C brands")
+    domains = {e["url"] for e in entries}
+    assert "https://brandly.example/" in domains and "https://shopco.example/" in domains
+    assert not any("listsite" in d or "twitter" in d for d in domains)
+    real_search = wigolo.search
+    monkeypatch.setattr(wigolo, "search", lambda q, **kw: {"results": [
+        {"url": "https://www.listsite.example/lists/top-d2c", "title": "Top D2C brands", "snippet": "list"}]})
+    session = llm.Session(product, run_id="t", cap=6)
+    found = accounts.candidates_from_search(session, config.load(SLUG), ["d2c brands"], competitors=[])
+    assert {"brandly.example", "shopco.example"} <= {f["domain"] for f in found}
+    assert all(f["evidence"] == "https://www.listsite.example/lists/top-d2c" for f in found)
+    assert session.calls == 2
+
+
+def test_run_without_keys_skips_paid_collectors(product, monkeypatch):
+    """Before the founder adds Apify/Snov keys a run still does the free work and says what it skipped."""
+    from gtm import run
+    from gtm.sources import apify, snov
+
+    def no_apify():
+        raise apify.ApifyUnavailable("Apify key missing")
+
+    def no_snov():
+        raise snov.SnovUnavailable("Snov keys missing")
+    monkeypatch.setattr(apify, "client", no_apify)
+    monkeypatch.setattr(snov, "client", no_snov)
+    res = run.execute(SLUG, "full", limit=5)
+    assert res["status"] == "done", res
+    skipped = " ".join(res["notes"])
+    assert "LinkedIn posts skipped" in skipped and "LinkedIn jobs skipped" in skipped
+    assert product.execute("SELECT count(*) FROM observations WHERE collector != 'linkedin_company'").fetchone()[0] > 0
+
+
+def test_company_phone_from_own_site_for_manual_follow_up(product):
+    from gtm.profile import _tel
+    assert _tel("tel:+1 (415) 555-0100") == "+14155550100"
+    assert _tel("tel:12") is None and _tel("mailto:a@b.co") is None and _tel("tel:1+2345678") is None
+    _full()
+    row = product.execute("SELECT phone, phone_evidence FROM accounts WHERE domain = 'shopco.example'").fetchone()
+    assert row["phone"] == "+14155550100" and row["phone_evidence"].startswith("https://shopco.example")
+    from gtm import review
+    seq = product.execute("SELECT s.* FROM sequences s JOIN leads l USING (lead_key) "
+                          "WHERE l.account_domain = 'shopco.example'").fetchone()
+    text = review.evidence(config.load(SLUG), product, ledger.open_ledger(), seq)
+    assert "company phone +14155550100" in text and "manual follow-up only" in text

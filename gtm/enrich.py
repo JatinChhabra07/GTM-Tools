@@ -16,6 +16,7 @@ from gtm import email_finder, gates, ledger
 from gtm import observations as obs
 from gtm.resolve import lead_key
 from gtm.schemas import PersonaMatches
+from gtm.sources import optional
 from gtm.sources.snov import GENERIC_PREFIXES
 from gtm.util import normalize_text, now_iso
 
@@ -210,7 +211,7 @@ def run(ctx) -> None:
             chosen[a["domain"]] = pick
         else:
             need_linkedin.append(a)
-    for domain, people in _people_from_linkedin(ctx, need_linkedin).items():
+    for domain, people in (optional(ctx, "LinkedIn people search", _people_from_linkedin, ctx, need_linkedin) or {}).items():
         pick = _pick(ctx, people)
         if pick:
             chosen[domain] = pick
@@ -225,7 +226,7 @@ def run(ctx) -> None:
                 leads.append(g)
             else:
                 ctx.count("no_contact_found")
-    find_emails(ctx, [lk for lk in leads if lk])
+    optional(ctx, "Snov email finding", find_emails, ctx, [lk for lk in leads if lk])
 
 
 def _upsert_lead(ctx, account, person: dict, persona, how: str) -> str:

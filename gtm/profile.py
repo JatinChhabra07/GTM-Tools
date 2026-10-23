@@ -60,6 +60,8 @@ class Profile:
     people: list[Person] = field(default_factory=list)
     generic_inboxes: list[str] = field(default_factory=list)
     printed_emails: list[str] = field(default_factory=list)
+    company_phone: str | None = None  # main line from a tel: link on their own site (manual follow-up)
+    company_phone_url: str | None = None
     job_titles: list[str] = field(default_factory=list)
     pages: dict[str, str] = field(default_factory=dict)  # kind -> url fetched
     page_text: dict[str, str] = field(default_factory=dict)  # url -> visible text
@@ -510,6 +512,15 @@ def _emails(doc: _Doc) -> list[str]:
     return [e.lower().strip(".") for e in found]
 
 
+def _tel(url: str) -> str | None:
+    """A tel: link's number, normalised (+ and digits), if it is a plausible phone number."""
+    if not url.lower().startswith("tel:"):
+        return None
+    raw = re.sub(r"[^\d+]", "", url[4:].split("?", 1)[0])
+    digits = raw.lstrip("+")
+    return raw if 7 <= len(digits) <= 15 and digits.isdigit() and "+" not in digits else None
+
+
 def _same_domain_email(email: str, domain: str) -> bool:
     host = email.rsplit("@", 1)[-1]
     return host == domain or host.endswith("." + domain)
@@ -702,6 +713,8 @@ def _collect(prof: Profile, docs: list[tuple[str, _Doc]], keywords: list[str]) -
         for url, _ in doc.links:
             if not prof.linkedin_url and (li := _linkedin(url)):
                 prof.linkedin_url = li
+            if kind in ("home", "contact", "about") and not prof.company_phone and (tel := _tel(url)):
+                prof.company_phone, prof.company_phone_url = tel, doc.url
         for email in _emails(doc):
             if not _same_domain_email(email, domain) or email in prof.printed_emails:
                 continue

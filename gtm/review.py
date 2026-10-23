@@ -145,6 +145,8 @@ def evidence(cfg, conn, ledger_conn, seq: sqlite3.Row) -> str:
              f"{account['name']} ({account['domain']}) · {account['industry'] or '?'} · {account['size_band'] or '?'} · "
              f"HQ {account['hq_country'] or '?'} · lead country {lead['country'] or '?'}",
              f"email {lead['email']} · {lead['email_class']} via {lead['email_source']} · mailbox {seq['mailbox_id']}",
+             *([f"company phone {account['phone']} (their site: {account['phone_evidence']}) · manual follow-up only"]
+               if account["phone"] else []),
              f"score {seq['score']} {'(HOLDOUT)' if seq['holdout'] else ''} · reference {seq['reference_policy']}"]
     if score:
         lines.append(f"dims {score['dims_json']}")

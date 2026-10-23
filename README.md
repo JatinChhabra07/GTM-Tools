@@ -17,7 +17,8 @@ short personal email to each. **Nothing is sent until you approve it with your P
    - Reddit / Hacker News (last30days) teach it how buyers describe the pain; those posters are
      never emailed
 4. **Finds the right person** at each company (Apify, their own website) and **checks the email
-   address** (Snov.io).
+   address** (Snov.io). The company's own published phone line is shown in your review screen for
+   a manual call if you want one; nothing is dialled automatically.
 5. **Filters hard:** a panel of AI reviewers (the graph-engineering pattern) throws out weak,
    risky or wrong leads. 10 great leads beat 50 random ones.
 6. **Writes the emails:** short, human, one specific reason to reach out, only facts that can be

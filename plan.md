@@ -819,3 +819,51 @@ Each round found fewer and narrower issues. The last ones were a forged-approval
 2. The wigolo MCP stdio client from Python is unverified until Phase 0. Fallback: Apify search.
 3. Subscription limits for ~150 isolated `claude -p` calls per run (§8 #7).
 4. Legal review for India before live sends.
+
+---
+
+## 14. Build status (2026-10-23)
+
+**All phases (0–9) are built** on `main`, with 294 offline tests passing. Live checks passed:
+isolated `claude -p` (noop run, direct and through the cron wrapper), wigolo
+search/fetch/diff/crawl from Python, last30days (Reddit + HN), mem0 + Qdrant isolation,
+`gtm crawl` on a real site. **Not live-checked yet** (they need the founder's keys): Apify actors,
+Snov find/verify/push/replies, a real send. The first live run with keys is the Phase 3/5/7 live
+check; `bin/gtm tools check --paid` verifies both keys for free first.
+
+Open items from §13: 1 and 2 are resolved (facts in `docs/tools.md`; wigolo works from Python).
+3 is handled by `usage.profile` caps plus pause-on-usage-limit. 4 still stands: legal review before
+any India sends (`docs/compliance.md`).
+
+### Where the build differs from the plan above
+- **Snov has no delete-prospect or send-reply API.** Erasure blocks the address (do-not-email +
+  Unsubscribed in every campaign) and queues a manual "delete in Snov" action; approved reply
+  drafts are sent by the founder by hand and marked `sent_manual`.
+- **Starter catalog dropped `EXEC_POST_TOPIC` and `COMPETITOR_CUSTOMER`**: neither has a
+  collector, and a confirmable code that never fires would mislead. `HIRING_*` are labelled paid
+  (Apify LinkedIn jobs; the careers-page path stays free).
+- **EU/UK are hard-blocked in config validation**, not just by default: the legitimate-interest
+  workflow isn't built.
+- **Personas may include normally excluded words** (recruiter, assistant...) when the founder's
+  own persona titles use them, so HR-tech products can target recruiters.
+- **`gtm crawl`** (not in the original plan) puts the site crawl, key-page fetches, soft-404 dedupe
+  and the Firecrawl fallback in code, so the onboarding skill never handles the Firecrawl key.
+- **`kb ingest --replace`** drops earlier site facts when re-onboarding; human facts and
+  learnings are untouched.
+- **Retention**: run folders and cron logs older than 90 days are pruned by the daily feedback pass.
+- **`report --proposals`** surfaces learning proposals; the founder accepts or declines them in
+  `/gtm-report`, and targeting changes only go through `/gtm-icp`.
+- **Claude Code may run `sending pause` and `autosend disable`** (the safe direction); `resume`,
+  `enable`, `review`, `mailbox add`, `forget`, `keys`, `secrets set` stay human-only (deny list +
+  TTY check + PIN signature).
+- **Target-account search mines company lists.** Live web search for "<industry> companies <country>"
+  returns top-N articles and directories, not homepages, so `accounts build` fetches the lists the
+  classifier flags (`is_company_list`) and classifies the companies linked from them (evidence = the
+  list page). Found in the first live keyless run (0 candidates before, fixed and tested).
+- **Missing keys skip only the paid collectors** (`gtm.sources.optional`): a run before the founder
+  adds Apify/Snov keys still profiles sites, reads news and site changes, and notes what it skipped.
+  Reply sync and pushes still fail closed.
+- **Phones**: only the company's own published `tel:` line, shown in review for manual follow-up;
+  no personal numbers, nothing automated.
+- **Skill evals are written, not yet run**: they're real, billed model runs; run them with
+  `claude plugin eval .` from each skill directory.

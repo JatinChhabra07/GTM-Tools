@@ -312,6 +312,11 @@ STATE_MIGRATIONS: list[str] = [
     ALTER TABLE sequences ADD COLUMN edited INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE sequences ADD COLUMN notice TEXT;
     """,
+    # v4: the company's own published phone line, shown in review for MANUAL follow-up only
+    """
+    ALTER TABLE accounts ADD COLUMN phone TEXT;
+    ALTER TABLE accounts ADD COLUMN phone_evidence TEXT;
+    """,
 ]
 
 

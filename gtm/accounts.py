@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import csv
 import os
+import re
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -294,33 +295,83 @@ def icp_queries(cfg: ProductConfig) -> list[str]:
     return list(dict.fromkeys(out))[:12]
 
 
-def candidates_from_search(llm_session, cfg: ProductConfig, queries: list[str], *, competitors: list[str]) -> list[dict]:
-    """wigolo search -> isolated classification -> [{domain, name, evidence}] (company sites only)."""
+_MD_LINK = re.compile(r"\[([^\]\n]{2,80})\]\((https?://[^)\s]+)\)")
+_BARE_DOMAIN = re.compile(r"\b((?:[a-z0-9-]+\.)+(?:com|co|io|shop|store|us|in|co\.in|net|org|ai|app|brand))\b", re.I)
+MAX_LISTS = 6
+MAX_PER_LIST = 40
+
+
+def _classify(llm_session, cfg: ProductConfig, competitors: list[str], entries: list[dict]):
     from gtm.schemas import Candidates
+    block = "\n\n".join(f"URL: {e['url']}\nTITLE: {e.get('title')}\nSNIPPET: {e.get('snippet')}" for e in entries)
+    return llm_session.json("classify_candidates", {"icp": cfg.icp.model_dump(), "anti_icp": cfg.anti_icp,
+                                                    "competitors": competitors, "product": cfg.product.name},
+                            Candidates, untrusted_blocks={"search_results": block})
+
+
+def list_entries(list_url: str, list_title: str | None) -> list[dict]:
+    """Companies named on a list page ("Top 100 Shopify stores", directories): their own links,
+    plus bare domains printed in the text. One entry per company domain."""
+    from gtm.sources import wigolo
+    page = wigolo.fetch(list_url, max_content_chars=60000)
+    md = page.get("markdown") or ""
+    host = domain_of(list_url)
+    out: dict[str, dict] = {}
+    pairs = [(name, url) for name, url in _MD_LINK.findall(md)]
+    pairs += [(None, u) for u in page.get("links") or [] if isinstance(u, str)]
+    pairs += [(None, f"https://{d.lower()}/") for d in _BARE_DOMAIN.findall(md)]
+    for name, url in pairs:
+        d = domain_of(url)
+        if not d or d == host or d.endswith("." + host) or is_junk(d) or d in out:
+            continue
+        out[d] = {"url": f"https://{d}/", "title": (name or "").strip() or None,
+                  "snippet": f"named on the list \"{(list_title or '')[:100]}\""}
+        if len(out) >= MAX_PER_LIST:
+            break
+    return list(out.values())
+
+
+def candidates_from_search(llm_session, cfg: ProductConfig, queries: list[str], *, competitors: list[str]) -> list[dict]:
+    """wigolo search -> isolated classification -> [{domain, name, evidence}] (company sites only).
+
+    Generic searches mostly return LISTS of companies (top-N articles, directories, "sites using
+    Shopify"), not company homepages, so lists are mined too: the companies' own links on the page
+    are classified the same way, with the list page as evidence."""
     from gtm.sources import wigolo
     found: dict[str, dict] = {}
-    for i in range(0, len(queries), 3):
-        batch = queries[i:i + 3]
-        try:
-            res = wigolo.search(batch, max_results=10)
-        except Exception:
-            continue
-        results = [r for r in (res.get("results", []) if isinstance(res, dict) else [])
-                   if r.get("url") and not is_junk(domain_of(r["url"]))]
-        if not results:
-            continue
-        block = "\n\n".join(f"URL: {r['url']}\nTITLE: {r.get('title')}\nSNIPPET: {r.get('snippet')}" for r in results)
-        out = llm_session.json("classify_candidates", {"icp": cfg.icp.model_dump(), "anti_icp": cfg.anti_icp,
-                                                       "competitors": competitors, "product": cfg.product.name},
-                               Candidates, untrusted_blocks={"search_results": block})
-        valid_urls = {r["url"] for r in results}
+    lists: dict[str, str | None] = {}
+
+    def accept(out, entries, evidence_for):
+        valid = {e["url"] for e in entries}
         for c in (out.companies if out else []):
-            if not c.is_company_site or c.url not in valid_urls:
+            if c.url not in valid:
+                continue
+            if c.is_company_list and c.url not in lists and len(lists) < MAX_LISTS * 2:
+                lists[c.url] = next((e.get("title") for e in entries if e["url"] == c.url), None)
+            if not c.is_company_site:
                 continue
             d = domain_of(c.url)  # the result's own host: the model can't invent a domain here
             if d and not is_junk(d):
                 name = c.name if c.name and not looks_like_url(c.name) else d
-                found.setdefault(d, {"domain": d, "name": name[:120], "evidence": c.url})
+                found.setdefault(d, {"domain": d, "name": name[:120], "evidence": evidence_for(c.url)})
+
+    for i in range(0, len(queries), 3):
+        try:
+            res = wigolo.search(queries[i:i + 3], max_results=10)
+        except Exception:
+            continue
+        results = [r for r in (res.get("results", []) if isinstance(res, dict) else []) if r.get("url")]
+        if results and llm_session.remaining > 0:
+            accept(_classify(llm_session, cfg, competitors, results), results, lambda u: u)
+    for list_url, title in list(lists.items())[:MAX_LISTS]:
+        if llm_session.remaining <= 0:
+            break
+        try:
+            entries = list_entries(list_url, title)
+        except Exception:
+            continue
+        if entries:
+            accept(_classify(llm_session, cfg, competitors, entries), entries, lambda u, src=list_url: src)
     return list(found.values())
 
 

@@ -17,7 +17,10 @@ domain (`.in`, `.de`...) can only add a block, never unblock.
 
 ## Data minimisation
 - Collected per lead: name, title, employer, work email (verified), LinkedIn URL, the public post or
-  page that triggered outreach (evidence URL). No phone numbers are used for automated contact.
+  page that triggered outreach (evidence URL).
+- Phones: only the company's own published main line (a `tel:` link on its home, contact or about
+  page) is stored, and it is only shown in the founder's review screen for **manual** follow-up.
+  No personal mobile numbers are collected; nothing dials or texts (respect TRAI DND in India).
 - People who only appear in Reddit/Hacker News discussions are **never** leads; their text is used
   in aggregate as "pain language" vocabulary inside isolated calls and is not shown in reports.
 - The knowledge base (mem0) refuses text containing an email address or phone number.

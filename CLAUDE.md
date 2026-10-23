@@ -1,22 +1,30 @@
 # GTM-Tools: rules for every Claude Code session
 
-Signal-based cold outreach automation. **`plan.md` is the source of truth**: read it before
-building anything, and work one phase at a time (§5). The founder is the end user: he talks to the
-`/gtm-*` skills and never edits config files by hand.
+Signal-based cold outreach automation. **`plan.md` is the source of truth** (§12 records what was
+built and where the build deviated). The founder is the end user: he talks to the `/gtm-*` skills
+and never edits config files by hand. All phases are built; work now is fixes and improvements.
+
+## Founder-facing skills (`.claude/skills/`, each with `evals/`)
+`/gtm` (front door, routes) · `/gtm-setup` · `/gtm-onboard` · `/gtm-icp` · `/gtm-clients` ·
+`/gtm-accounts` · `/gtm-run` · `/gtm-report` · `/gtm-doctor`. Change a skill with **skill-creator**
+and keep its evals passing (`claude plugin eval .` from the skill dir: real, billed runs).
 
 ## Commands
 - `bin/gtm <cmd>`: the CLI (`bin/gtm --help`). The venv lives in `~/.local/share/gtm-tools/venv`,
   not on this NTFS mount, so always use `bin/gtm` / `bin/test`, never a bare `uv run` or `pytest`.
-- `bin/test`: the test suite. `GTM_LIVE_TESTS=1 bin/test -m live` makes real (subscription) calls.
+- `bin/test`: the test suite (forces `GTM_KB_BACKEND=memory`: tests never touch the real Qdrant).
+  `GTM_LIVE_TESTS=1 bin/test -m live` makes real (subscription) calls.
+- `GTM_FAKE=1` + throwaway `GTM_DATA_DIR`/`GTM_CONFIG_DIR`/`GTM_PRODUCTS_DIR` runs the whole CLI
+  against the offline fake world (`gtm/fake.py`): use it to try a change end to end.
 - Every product command takes `--product <slug>`. Start any product work with
   `bin/gtm product show --product <slug>` and say which product you're on.
 
 ## Tool & skill map: use these, don't reinvent them
 | Job | Use | Where |
 |---|---|---|
-| Crawl the founder's product site (interactive) | **wigolo MCP** `crawl` / `fetch` / `extract` (check `cache` first) | `/gtm-onboard` |
-| Web/news search, page diffs in scheduled runs | **wigolo** via the Python MCP stdio client (`gtm/sources/wigolo.py`) | Phase 0C+ |
-| Fallback crawler when wigolo can't read a site | **Firecrawl** (`FIRECRAWL_API_KEY`) | optional |
+| Crawl the founder's product site | `bin/gtm crawl` (`gtm/site_crawl.py`): wigolo crawl + key pages, **Firecrawl** fallback when a key is set | `/gtm-onboard` |
+| Interactive web lookups | **wigolo MCP** (`cache` first) | any skill |
+| Web/news search, page diffs in scheduled runs | **wigolo** via the Python MCP stdio client (`gtm/sources/wigolo.py`) | runs |
 | Prospect company websites | `gtm/profile.py` over `gtm/public_http.py` (SSRF-safe) | Phase 2+ |
 | Knowledge base per product | **mem0** (`infer=False`) + Qdrant server, only via `gtm/kb.py` | Phase 1 |
 | Reddit / Hacker News pain language | **last30days** engine (pinned checkout, JSON mode) | Phase 4 |
