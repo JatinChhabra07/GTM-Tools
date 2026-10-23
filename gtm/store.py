@@ -245,6 +245,67 @@ STATE_MIGRATIONS: list[str] = [
         last_collected_at TEXT NOT NULL
     );
     """,
+    # v2: pipeline state (built in the full build): resolution, snapshots, caches, review notes
+    """
+    ALTER TABLE accounts ADD COLUMN created_at TEXT;
+    ALTER TABLE accounts ADD COLUMN linkedin_company_checked_at TEXT;
+    ALTER TABLE leads ADD COLUMN first_name TEXT;
+    ALTER TABLE leads ADD COLUMN country TEXT;
+    ALTER TABLE leads ADD COLUMN status TEXT NOT NULL DEFAULT 'new';
+    ALTER TABLE leads ADD COLUMN created_at TEXT;
+    ALTER TABLE leads ADD COLUMN enriched_at TEXT;
+    ALTER TABLE posts ADD COLUMN intent_code TEXT;
+    ALTER TABLE posts ADD COLUMN intent_strength INTEGER;
+    ALTER TABLE posts ADD COLUMN employer TEXT;
+    ALTER TABLE posts ADD COLUMN account_domain TEXT;
+    ALTER TABLE posts ADD COLUMN lead_key TEXT;
+    ALTER TABLE posts ADD COLUMN labelled_at TEXT;
+    ALTER TABLE scores ADD COLUMN created_at TEXT;
+    ALTER TABLE sequences ADD COLUMN created_at TEXT;
+    ALTER TABLE sequences ADD COLUMN pushed_at TEXT;
+    ALTER TABLE sequences ADD COLUMN score REAL;
+    ALTER TABLE sequences ADD COLUMN holdout INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE sequences ADD COLUMN validator_json TEXT NOT NULL DEFAULT '[]';
+    ALTER TABLE replies ADD COLUMN lead_key TEXT;
+    ALTER TABLE replies ADD COLUMN classifier_json TEXT;
+    ALTER TABLE reply_drafts ADD COLUMN created_at TEXT;
+
+    -- untrusted page text kept ONLY to diff the next visit (SITE_CHANGE / PRICING_CHANGE)
+    CREATE TABLE page_snapshots (
+        url TEXT PRIMARY KEY,
+        account_domain TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        text_hash TEXT NOT NULL,
+        text TEXT NOT NULL,
+        fetched_at TEXT NOT NULL
+    );
+    CREATE TABLE persona_cache (
+        title_norm TEXT PRIMARY KEY,
+        persona TEXT,
+        at TEXT NOT NULL
+    );
+    -- founder feedback from `gtm review`: campaign-wide vs one contact (scoped separately, plan Phase 7)
+    CREATE TABLE writer_notes (
+        id INTEGER PRIMARY KEY,
+        scope TEXT NOT NULL CHECK (scope IN ('campaign','contact')),
+        lead_key TEXT,
+        note TEXT NOT NULL,
+        at TEXT NOT NULL
+    );
+    CREATE TABLE golden_labels (
+        post_id TEXT NOT NULL,
+        code TEXT NOT NULL,
+        label INTEGER NOT NULL CHECK (label IN (0,1)),
+        PRIMARY KEY (post_id, code)
+    );
+    CREATE TABLE proposals (
+        id INTEGER PRIMARY KEY,
+        kind TEXT NOT NULL,
+        body_json TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','accepted','rejected')),
+        at TEXT NOT NULL
+    );
+    """,
 ]
 
 

@@ -99,6 +99,48 @@ LEDGER_MIGRATIONS: list[str] = [
         scopes_cleared_json TEXT NOT NULL
     );
     """,
+    # v2: Snov wiring, touch reservations per sequence, manual actions, bounces
+    """
+    CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+    -- one Snov list + campaign per (product, mailbox): the Snov sender really is the mailbox
+    CREATE TABLE snov_campaigns (
+        product TEXT NOT NULL,
+        mailbox_id TEXT NOT NULL REFERENCES mailboxes(id),
+        list_id INTEGER NOT NULL,
+        campaign_id INTEGER NOT NULL,
+        settings_ok INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (product, mailbox_id)
+    );
+    -- exactly what a push reserved, so a failed push before sending can be released precisely
+    CREATE TABLE reservations (
+        seq_id TEXT NOT NULL,
+        mailbox_id TEXT NOT NULL,
+        date TEXT NOT NULL,
+        touches INTEGER NOT NULL,
+        PRIMARY KEY (seq_id, date)
+    );
+    CREATE TABLE bounces (
+        id INTEGER PRIMARY KEY,
+        mailbox_id TEXT NOT NULL,
+        email_hash TEXT NOT NULL,
+        at TEXT NOT NULL,
+        UNIQUE (mailbox_id, email_hash)
+    );
+    -- things the API can't do (delete a Snov prospect, send a reply): shown in every report until done
+    CREATE TABLE manual_actions (
+        id INTEGER PRIMARY KEY,
+        product TEXT,
+        action TEXT NOT NULL,
+        detail TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        done_at TEXT
+    );
+    ALTER TABLE account_sequences ADD COLUMN email_class TEXT;
+    """,
 ]
 
 
