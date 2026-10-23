@@ -57,6 +57,8 @@ def collect(ctx) -> None:
             social.collect_fallbacks(ctx)
         pain_language(ctx)  # also stores Reddit/HN posts for intent labelling
     label(ctx)
+    if on("reddit") and ctx.cfg.signals.reddit_authors.enabled:
+        optional(ctx, "Reddit author lookup", social.lookup_reddit_authors, ctx)
 
 
 # ---------------------------------------------------------------- sources

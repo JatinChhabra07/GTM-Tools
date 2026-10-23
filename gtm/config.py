@@ -65,6 +65,13 @@ SOCIAL_SOURCES = ("linkedin", "x", "instagram", "reddit", "hackernews",
                   "hn_web", "quora", "indiehackers", "forums", "reviews", "jobs")
 
 
+class RedditAuthors(Strict):
+    """Paid (Apify) lookup of the poster's username for intent-sheet Reddit rows: last30days gives
+    no author and reddit.com blocks free fetching (plan §15.5). The founder switches it on."""
+    enabled: bool = False
+    max_per_run: int = Field(20, ge=1, le=100)
+
+
 class SignalInputs(Strict):
     linkedin: dict = {}
     x: dict = {}
@@ -75,6 +82,7 @@ class SignalInputs(Strict):
     # per-source on/off the founder confirmed after `gtm signals test`; a missing key keeps the
     # default (core sources on, Instagram per instagram.enabled, fallbacks off): see gtm/social.py
     sources: dict[str, bool] = {}
+    reddit_authors: RedditAuthors = RedditAuthors()
 
     @field_validator("sources")
     @classmethod

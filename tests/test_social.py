@@ -253,3 +253,64 @@ def test_last30days_author_facts():
     assert found["hackernews"]["url"] == "https://news.ycombinator.com/item?id=9"
     assert found["hackernews"]["author_profile"] == "https://news.ycombinator.com/user?id=pg"
     assert social.profile_url("reddit", "[deleted]") is None and social.profile_url("reddit", "a/../b") is None
+
+
+# ---------------------------------------------------------------- Reddit author lookup (paid, opt-in)
+
+def _reddit_lookup(enabled: bool, max_per_run: int = 20) -> None:
+    cfg = config.load(SLUG)
+    cfg.signals.reddit_authors.enabled, cfg.signals.reddit_authors.max_per_run = enabled, max_per_run
+    config.save(cfg)
+
+
+def test_reddit_author_lookup_is_off_by_default_and_costs_nothing(world):
+    fake.FakeApify.started.clear()
+    _full_run()
+    assert social.read_sheet(SLUG) and not [k for k, _ in fake.FakeApify.started if k == "reddit"]
+    row = {r["post_url"]: r for r in social.read_sheet(SLUG)}[REDDIT_NAMED_CO]
+    assert row["author_profile_url"] == ""
+
+
+def test_reddit_author_lookup_fills_the_profile_once(world):
+    _reddit_lookup(True)
+    fake.FakeApify.started.clear()
+    res = _full_run()
+    rows = {r["post_url"]: r for r in social.read_sheet(SLUG)}
+    assert rows[REDDIT_NAMED_CO]["author_profile_url"] == "https://www.reddit.com/user/brandly_ops"
+    assert rows[REDDIT_ANON]["author_profile_url"] == "https://www.reddit.com/user/cartwoes_22"  # untouched
+    runs = [inp for k, inp in fake.FakeApify.started if k == "reddit"]
+    assert len(runs) == 1 and runs[0]["startUrls"] == [{"url": REDDIT_NAMED_CO}]  # only the row missing it
+    assert runs[0]["maxPostCount"] == 1 and runs[0]["skipComments"] is True
+    assert res["counts"]["reddit_authors_found"] == 1
+    assert social.reddit_rows_missing_author(SLUG) == []
+    _full_run()
+    assert len([k for k, _ in fake.FakeApify.started if k == "reddit"]) == 1  # never paid twice
+    conn = store.open_state(SLUG)
+    assert not conn.execute("SELECT 1 FROM leads WHERE full_name LIKE '%brandly_ops%' "
+                            "OR linkedin_url LIKE '%reddit%'").fetchone()  # still never a lead
+
+
+def test_reddit_author_lookup_respects_erasure_and_unknown_authors(world, monkeypatch):
+    _reddit_lookup(True)
+    social.remove(SLUG, "https://www.reddit.com/user/brandly_ops")  # erased before it was ever found
+    _full_run()
+    row = {r["post_url"]: r for r in social.read_sheet(SLUG)}[REDDIT_NAMED_CO]
+    assert row["author_profile_url"] == ""
+    monkeypatch.setattr(fake, "REDDIT_AUTHORS", {"def456": "[deleted]"})
+    assert social.profile_url("reddit", "[deleted]") is None
+
+
+def test_reddit_author_lookup_without_key_skips_with_a_note(world, monkeypatch):
+    _reddit_lookup(True)
+    def no_key():
+        raise apify.ApifyUnavailable("Apify key missing")
+    monkeypatch.setattr(apify, "client", no_key)
+    res = _full_run()
+    assert any("Reddit author lookup skipped" in n for n in res["notes"]), res["notes"]
+    assert social.reddit_rows_missing_author(SLUG)  # not marked tried: retried once a key exists
+
+
+def test_sheet_command_shows_the_lookup_estimate(world):
+    _full_run()
+    out = CliRunner().invoke(app, ["sheet", "--product", SLUG]).output
+    assert "Reddit rows without a profile: 1" in out and "OFF" in out and "$0.01" in out

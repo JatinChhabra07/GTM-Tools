@@ -506,7 +506,7 @@ def sheet_cmd(product: str = typer.Option(...), since: int = typer.Option(7, min
     """The intent sheet: anonymous intent posts for YOUR manual follow-up. Nobody on it is emailed."""
     from gtm import social
     from gtm.util import sanitize_name
-    config.load(product)
+    cfg = config.load(product)
     if remove:
         from gtm.run import product_lock
         with product_lock(product):
@@ -518,6 +518,13 @@ def sheet_cmd(product: str = typer.Option(...), since: int = typer.Option(7, min
     for r in rows:
         typer.echo(" | ".join([r["date"], r["source"], r["intent_code"], r["post_url"], r["author_profile_url"] or "-",
                                sanitize_name(r["company_if_named"]) or "-", sanitize_name(r["summary"], 160)]))
+    missing = len(social.reddit_rows_missing_author(product))
+    ra = cfg.signals.reddit_authors
+    if missing or ra.enabled:
+        n = min(missing, ra.max_per_run)
+        typer.echo(f"Reddit rows without a profile: {missing}. Author lookup (paid, Apify): "
+                   f"{'ON' if ra.enabled else 'OFF'}, up to {ra.max_per_run} posts per run, "
+                   f"next run about ${social.reddit_lookup_estimate(n):.2f}")
 
 
 # ---------------------------------------------------------------- schedule / manual / forget

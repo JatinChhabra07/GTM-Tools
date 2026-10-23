@@ -23,15 +23,18 @@ ACTORS = {
     "tweets": "apidojo/tweet-scraper",
     "instagram": "apify/instagram-scraper",
     "google": "apify/google-search-scraper",
+    "reddit": "trudax/reddit-scraper-lite",  # intent-sheet author lookup only (plan §15.5)
 }
 
 # Worst-case USD per result on the FREE/BRONZE tier (docs/tools.md §2.1) + per-run start fees.
 # Used for --estimate and to size charge caps; Apify's own cap is the hard limit.
 PRICE_PER_ITEM = {"posts": 0.002, "company": 0.004, "employees": 0.008, "people": 0.004,
-                  "jobs": 0.002, "tweets": 0.0004, "instagram": 0.0027, "google": 0.0045}
+                  "jobs": 0.002, "tweets": 0.0004, "instagram": 0.0027, "google": 0.0045,
+                  "reddit": 0.004}
 PRICE_PER_RUN = {"employees": 0.02, "people": 0.10}  # actor-start / first search page
 MIN_CHARGE = {"posts": 0.01, "company": 0.004, "employees": 0.05, "people": 0.1, "jobs": 0.001,
-              "tweets": 0.0, "instagram": 0.0027, "google": 0.5}
+              "tweets": 0.0, "instagram": 0.0027, "google": 0.5,
+              "reddit": 0.01}
 TERMINAL = {"SUCCEEDED", "FAILED", "TIMED-OUT", "ABORTED"}
 
 

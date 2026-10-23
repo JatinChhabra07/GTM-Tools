@@ -503,3 +503,70 @@ def format_table(res: dict) -> str:
         lines.append(f"{r['label'] + on:<26} {r.get('items', 0):>5} {intent:>10} {share:>10}  "
                      f"{r['recommend']:<9}  {sanitize_name(r['reason'], 70)}")
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------- Reddit author lookup (paid, opt-in)
+# last30days gives no Reddit author and reddit.com blocks free fetching (direct and browser,
+# verified 2026-10-23), so the sheet's profile column needs Apify. Only rows already on the sheet,
+# at most `max_per_run`, each post paid for once (a hash per tried post).
+
+_REDDIT_POST = re.compile(r"^https://(?:www\.|old\.)?reddit\.com/r/[^/]+/comments/([a-z0-9]+)", re.I)
+
+
+def _tried_path(slug: str):
+    return product_data_dir(slug) / "reddit_authors_tried.txt"
+
+
+def _tried(slug: str) -> set[str]:
+    p = _tried_path(slug)
+    return set(p.read_text().split()) if p.exists() else set()
+
+
+def reddit_rows_missing_author(slug: str) -> list[dict]:
+    """Reddit sheet rows with no profile that were never looked up, newest first."""
+    tried = _tried(slug)
+    return [r for r in reversed(read_sheet(slug)) if r["source"] == "reddit" and not r["author_profile_url"]
+            and _REDDIT_POST.match(r["post_url"]) and sha256(r["post_url"]) not in tried]
+
+
+def reddit_lookup_estimate(n: int) -> float:
+    from gtm.sources import apify
+    return max(apify.estimate("reddit", 2 * n), apify.MIN_CHARGE["reddit"]) if n else 0.0
+
+
+def lookup_reddit_authors(ctx) -> None:
+    """Fill author_profile_url for Reddit sheet rows (Apify trudax/reddit-scraper-lite, start URL = the post)."""
+    from gtm.signals import _apify_run
+    todo = reddit_rows_missing_author(ctx.slug)[:ctx.cfg.signals.reddit_authors.max_per_run]
+    if not todo:
+        return
+    ids = {_REDDIT_POST.match(r["post_url"]).group(1).lower(): r["post_url"] for r in todo}
+    run_input = {"startUrls": [{"url": u} for u in ids.values()], "skipComments": True, "skipUserPosts": True,
+                 "skipCommunity": True, "maxItems": 2 * len(ids), "maxPostCount": len(ids)}  # default 10 would cut it
+    items = _apify_run(ctx, "reddit", "reddit_authors_run", run_input, 2 * len(ids), "Reddit author lookup")
+    found: dict[str, str] = {}
+    for it in items:
+        if it.get("dataType") not in (None, "post"):
+            continue
+        m = _REDDIT_POST.match(it.get("url") or "")
+        pid = (it.get("parsedId") or (m.group(1) if m else "")).lower()
+        prof = profile_url("reddit", it.get("username"))
+        if pid in ids and prof:
+            found[ids[pid]] = prof
+    blocked = _blocked(ctx.slug)
+    rows = read_sheet(ctx.slug)  # re-read: the founder may have removed rows meanwhile
+    filled = 0
+    for r in rows:
+        prof = found.get(r["post_url"])
+        if prof and not r["author_profile_url"] and sha256(prof) not in blocked:
+            r["author_profile_url"] = prof
+            filled += 1
+    if filled:
+        _write_sheet(ctx.slug, rows)
+    ensure_private_dir(product_data_dir(ctx.slug))
+    fd = os.open(_tried_path(ctx.slug), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    with os.fdopen(fd, "a") as f:  # paid once per post, found or not
+        f.write("".join(sha256(u) + "\n" for u in ids.values()))
+    ctx.count("reddit_authors_found", filled)
+    if filled < len(ids):
+        ctx.note(f"Reddit author lookup: {len(ids) - filled} of {len(ids)} posts gave no author (deleted or removed)")

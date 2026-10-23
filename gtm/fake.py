@@ -406,3 +406,17 @@ def llm_response(prompt_id: str, payload: dict, blocks: dict) -> dict:  # noqa: 
             if lab["code"]:
                 lab["summary"] = "wants a cart recovery tool"
     return out
+
+
+# ---------------------------------------------------------------- Reddit author lookup (plan §15.5)
+# trudax/reddit-scraper-lite returns the post item with `username`; the second fake Reddit post has
+# no author in last30days, so the lookup fills it.
+REDDIT_AUTHORS = {"def456": "brandly_ops"}
+_apify_items_base = _apify_items
+
+
+def _apify_items(kind: str) -> list[dict]:  # noqa: F811
+    if kind == "reddit":
+        return [{"dataType": "post", "parsedId": pid, "username": user,
+                 "url": f"https://www.reddit.com/r/ecommerce/comments/{pid}/x/"} for pid, user in REDDIT_AUTHORS.items()]
+    return _apify_items_base(kind)
