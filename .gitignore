@@ -17,3 +17,4 @@ __pycache__/
 # tool state
 .gstack/
 *-workspace/
+.claude/worktrees/

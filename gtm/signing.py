@@ -136,3 +136,20 @@ def approval_payload(*, product: str, target: str, target_id: str, content_hash:
     return {"kind": "approval", "product": product, "target": target, "target_id": target_id,
             "content_hash": content_hash, "approved_by": approved_by, "approved_at": approved_at,
             "via": via, "edited": bool(edited)}
+
+
+def autosend_payload(*, product: str, enabled_at: str, approved_by: str) -> dict:
+    return {"kind": "autosend", "product": product, "enabled_at": enabled_at, "approved_by": approved_by}
+
+
+def resume_payload(*, at: str, approved_by: str) -> dict:
+    return {"kind": "resume_sending", "at": at, "approved_by": approved_by}
+
+
+def mailbox_payload(*, mailbox_id: str, address: str, daily_cap: int, warmup_start: str | None,
+                    warmup_min_days: int, start_sends: int, daily_increase: int,
+                    catchall_allowed: bool) -> dict:
+    """A mailbox's sending limits are signed too: raising a cap needs the PIN."""
+    return {"kind": "mailbox", "id": mailbox_id, "address": address.lower(), "daily_cap": daily_cap,
+            "warmup_start": warmup_start, "warmup_min_days": warmup_min_days, "start_sends": start_sends,
+            "daily_increase": daily_increase, "catchall_allowed": bool(catchall_allowed)}

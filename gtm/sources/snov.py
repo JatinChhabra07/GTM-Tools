@@ -280,6 +280,10 @@ class Snov:
                 return out
             offset += pag.get("limit", 1000)
 
+    def finished(self, campaign_id: int) -> list[str]:
+        rows = self.request("GET", "/v1/prospect-finished", params={"campaignId": campaign_id})
+        return [r["userEmail"].lower() for r in rows or [] if r.get("userEmail")]
+
     def balance(self) -> dict:
         return self.request("GET", "/v1/get-balance").get("data", {})
 

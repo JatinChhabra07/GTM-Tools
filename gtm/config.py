@@ -134,6 +134,7 @@ class Voice(Strict):
     sender_name: str = ""
     postal_address: str = ""
     opt_out_line: str = 'Not interested? Reply "no thanks" and I won\'t email again.'
+    humanize: Literal["auto", "on", "off"] = "auto"  # auto: on for max20x, off for max5x (saves calls)
 
 
 DEFAULT_GEO = {

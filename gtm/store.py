@@ -306,6 +306,12 @@ STATE_MIGRATIONS: list[str] = [
         at TEXT NOT NULL
     );
     """,
+    # v3: what the validator needs at push time is frozen at write time (proofs, allowed URLs)
+    """
+    ALTER TABLE sequences ADD COLUMN context_json TEXT NOT NULL DEFAULT '{}';
+    ALTER TABLE sequences ADD COLUMN edited INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE sequences ADD COLUMN notice TEXT;
+    """,
 ]
 
 

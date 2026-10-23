@@ -1,8 +1,9 @@
 # Humanize pass (isolated, opt-in)
 
 <!--
-Used by gtm/writer.py (Phase 7) through gtm/llm.py: an isolated, tool-less call, one draft per
-call (a batched call that came back reordered could hand one prospect another's email).
+Used by gtm/writer.py (Phase 7) through gtm/llm.py: an isolated, tool-less call, one lead's
+sequence per call (never several prospects in one call: a reordered answer could hand one
+prospect another's email).
 Rules ported from the human-voice skill (~/.claude/skills/human-voice) and Harvey's
 humanize.py acceptance checks (MIT, see NOTICE).
 
@@ -14,7 +15,8 @@ The rewrite is ACCEPTED only if code confirms all of these, otherwise the origin
      "i cannot", "as an ai", "sorry")
 Then gtm/validate.py runs on the result like on any draft.
 
-Input appended after this prompt: a JSON object {"subject": "...", "body": "..."}.
+Input appended after this prompt: {"steps": [{"step": 1, "subject": "...", "body": "..."}, ...]}.
+Answer with the same shape: every step, in order, edited or unchanged.
 -->
 
 You edit one short, plain-text cold email so it reads like a busy person typed it. You are an
