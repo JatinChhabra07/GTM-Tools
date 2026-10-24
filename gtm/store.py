@@ -383,12 +383,19 @@ STATE_MIGRATIONS: list[str] = [
 
 def open_state(slug: str) -> sqlite3.Connection:
     conn = db.connect(state_db(slug))
-    before = conn.execute("PRAGMA user_version").fetchone()[0]
     db.migrate(conn, STATE_MIGRATIONS)
-    if before < _DISCOVERY_VERSION:  # the discovery_hits migration just ran: attribute older accounts once
+    # attribute accounts that predate discovery_hits once; the marker commits with the backfill, so a
+    # crash in between just repeats it (it is idempotent) instead of skipping it forever
+    if not conn.execute("SELECT 1 FROM watermarks WHERE source = 'discovery_backfill'").fetchone():
         from gtm import discovery
-        discovery.backfill(conn)
+        from gtm.util import now_iso
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            discovery.backfill(conn)
+            conn.execute("INSERT OR IGNORE INTO watermarks (source, last_collected_at) VALUES ('discovery_backfill', ?)",
+                         (now_iso(),))
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
     return conn
-
-
-_DISCOVERY_VERSION = next(i for i, m in enumerate(STATE_MIGRATIONS, 1) if "CREATE TABLE discovery_hits" in m)

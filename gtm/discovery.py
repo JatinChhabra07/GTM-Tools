@@ -47,6 +47,10 @@ def record(conn: sqlite3.Connection, domain: str, engine: str, *, evidence_url: 
     return True
 
 
+# an old account with no created_at: counted all-time, never as "found in the last N days"
+UNKNOWN_FIRST_SEEN = "2000-01-01T00:00:00+00:00"
+
+
 def backfill(conn: sqlite3.Connection) -> int:
     """One-time attribution for accounts that predate this table: source 'signal' -> social,
     'tal' -> icp (detail 'backfill'). Clients and near-misses were never discovered. Idempotent."""
@@ -57,7 +61,7 @@ def backfill(conn: sqlite3.Connection) -> int:
         f"WHERE a.source IN ({','.join('?' * len(BACKFILL))}) AND a.status NOT IN ('client','near_miss') "
         "AND (a.resolution_evidence GLOB 'http://*' OR a.resolution_evidence GLOB 'https://*') "
         "AND NOT EXISTS (SELECT 1 FROM discovery_hits h WHERE h.domain = a.domain)",
-        (now_iso(), now_iso(), *BACKFILL))
+        (UNKNOWN_FIRST_SEEN, UNKNOWN_FIRST_SEEN, *BACKFILL))
     return cur.rowcount
 
 

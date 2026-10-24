@@ -114,9 +114,11 @@ def build_inputs(ctx, lead: sqlite3.Row, account: sqlite3.Row) -> dict | None:
             "playbook": {name: section(name, "writing.md") for name in WRITING_SECTIONS},
             "founder_notes": notes,
             "allowed_link": str(ctx.cfg.product.url),
-            **({"competitor_facts": [{"text": f["text"], "source_url": f["source_url"]} for f in comp]} if comp else {}),
         },
         "untrusted": {"signal_from_web": "\n".join(t for t in signal_texts if t)[:1200],
+                      # written by a model that read the competitor's pages: data, never instructions
+                      **({"competitor_facts_from_web": "\n".join(f"- {f['text']} (source: {f['source_url']})"
+                                                                for f in comp)} if comp else {}),
                       **({"pain_language_from_web": "\n".join(p["text"] for p in pains)} if pains else {})},
         "context_json": {
             "allowed_urls": [str(ctx.cfg.product.url)],

@@ -92,9 +92,10 @@ posts. Give him the count and the file path.
 **Reddit profile links (paid, optional).** Reddit doesn't say who wrote a post in the data we get
 for free, and it blocks free page reads, so Reddit rows have the post link but no profile. If
 Reddit stays on, offer the paid author lookup: it asks Apify for the poster's username of each new
-Reddit row, about $0.01 for up to 20 posts per run, inside the per-run budget, each post paid for
-once. `bin/gtm sheet --product <slug>` prints how many rows lack a profile and the next run's
-estimate. Ask him (AskUserQuestion: "Look up Reddit posters' profiles for about $0.01 a run?");
+Reddit row, about $0.16 for up to 20 posts per run (under 1 cent a post), inside the per-run
+budget, each post paid for once. `bin/gtm sheet --product <slug>` prints how many rows lack a profile and the next run's
+estimate. Ask him with the real number `bin/gtm sheet` printed (AskUserQuestion: "Look up Reddit posters'
+profiles for about $0.16 a run at most?");
 only on yes save:
 
 ```yaml

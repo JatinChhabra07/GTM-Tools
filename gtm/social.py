@@ -147,14 +147,17 @@ def _blocked(slug: str) -> set[str]:
 
 def add_rows(slug: str, rows: list[dict]) -> int:
     """Append new rows; dedupe by post_url; skip anything the founder removed. Returns rows added."""
+    from gtm import ledger
     current = read_sheet(slug)
     seen = {r["post_url"] for r in current}
     blocked = _blocked(slug)
+    led = ledger.open_ledger()
     new = []
     for r in rows:
         url = r.get("post_url") or ""
-        if not url or url in seen or sha256(url) in blocked or \
-                (r.get("author_profile_url") and sha256(r["author_profile_url"]) in blocked):
+        prof = r.get("author_profile_url") or ""
+        if not url or url in seen or sha256(url) in blocked or (prof and sha256(prof) in blocked) or \
+                (prof and ledger.is_suppressed(led, linkedin_url=prof)):  # erased with `gtm forget`
             continue
         seen.add(url)
         new.append(r)
@@ -164,18 +167,64 @@ def add_rows(slug: str, rows: list[dict]) -> int:
 
 
 def remove(slug: str, url: str) -> int:
-    """Erasure on request: drop rows whose post or author profile is `url`, and never re-add them."""
-    url = url.strip()
+    """Erasure on request: drop sheet rows whose post or author profile is `url`, never re-add them,
+    and purge that person's posts (plus what cites them) from the product's database."""
+    from gtm import store
+    return purge_person(store.open_state(slug), slug, [url])["sheet_rows"]
+
+
+def _norm(u: str) -> str:
+    return (u or "").strip().rstrip("/").lower()
+
+
+def purge_person(conn, slug: str, urls: list[str]) -> dict:
+    """Everything we hold about one social author, by their profile or post URL(s): sheet rows (and a
+    block so they never come back), their stored posts, and observations / discovery hits whose
+    evidence is one of those posts. Account rows stay: they are companies, not people."""
+    want = {_norm(u) for u in urls if u and u.strip()}
+    if not want:
+        return {"sheet_rows": 0, "posts": 0, "observations": 0, "discovery_hits": 0}
+    posts = [r for r in conn.execute("SELECT id, url, author_handle FROM posts")
+             if _norm(r["url"]) in want or _norm(r["author_handle"]) in want]
+    post_urls = {_norm(r["url"]) for r in posts} | want
     rows = read_sheet(slug)
-    keep = [r for r in rows if url not in (r["post_url"], r["author_profile_url"])]
+    gone = [r for r in rows if _norm(r["post_url"]) in post_urls or _norm(r["author_profile_url"]) in want]
     ensure_private_dir(product_data_dir(slug))
-    p = _blocked_path(slug)
-    fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    fd = os.open(_blocked_path(slug), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
     with os.fdopen(fd, "a") as f:
-        f.write(sha256(url) + "\n")
-    if len(keep) != len(rows):
-        _write_sheet(slug, keep)
-    return len(rows) - len(keep)
+        f.write("".join(sha256(u.strip()) + "\n" for u in urls if u and u.strip()))
+        f.write("".join(sha256(r["post_url"]) + "\n" + (sha256(r["author_profile_url"]) + "\n" if r["author_profile_url"] else "")
+                        for r in gone))
+    if gone:
+        _write_sheet(slug, [r for r in rows if r not in gone])
+    out = {"sheet_rows": len(gone), "posts": len(posts), "observations": 0, "discovery_hits": 0}
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        for u in post_urls:
+            out["observations"] += conn.execute(
+                "DELETE FROM observations WHERE lower(rtrim(evidence_url, '/')) = ?", (u,)).rowcount
+            out["discovery_hits"] += conn.execute(
+                "DELETE FROM discovery_hits WHERE lower(rtrim(evidence_url, '/')) = ?", (u,)).rowcount
+        conn.executemany("DELETE FROM posts WHERE id = ?", [(r["id"],) for r in posts])
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+    return out
+
+
+def prune_posts(conn, days: int = RETENTION_DAYS) -> int:
+    """Retention (docs/compliance.md): posts that never became a lead are deleted after `days`,
+    with the observations that cite them."""
+    cutoff = (now() - timedelta(days=days)).isoformat(timespec="seconds")
+    old = [r["url"] for r in conn.execute(
+        "SELECT url FROM posts WHERE lead_key IS NULL AND COALESCE(labelled_at, posted_at, '') != '' "
+        "AND COALESCE(labelled_at, posted_at) < ?", (cutoff,))]
+    for u in old:
+        conn.execute("DELETE FROM observations WHERE evidence_url = ? AND lead_key IS NULL", (u,))
+        conn.execute("DELETE FROM discovery_hits WHERE evidence_url = ?", (u,))
+    return conn.execute("DELETE FROM posts WHERE lead_key IS NULL AND COALESCE(labelled_at, posted_at, '') != '' "
+                        "AND COALESCE(labelled_at, posted_at) < ?", (cutoff,)).rowcount
 
 
 def prune_sheet(slug: str, days: int = RETENTION_DAYS) -> int:
@@ -526,7 +575,19 @@ def reddit_rows_missing_author(slug: str) -> list[dict]:
     """Reddit sheet rows with no profile that were never looked up, newest first."""
     tried = _tried(slug)
     return [r for r in reversed(read_sheet(slug)) if r["source"] == "reddit" and not r["author_profile_url"]
-            and _REDDIT_POST.match(r["post_url"]) and sha256(r["post_url"]) not in tried]
+            and _REDDIT_POST.match(r["post_url"]) and _post_key(r["post_url"]) not in tried]
+
+
+def _post_key(url: str) -> str:
+    """One Reddit post, whatever URL form the sheet holds (www/old, slug or not)."""
+    return sha256("reddit:" + _REDDIT_POST.match(url).group(1).lower())
+
+
+def _mark_tried(slug: str, urls) -> None:
+    ensure_private_dir(product_data_dir(slug))
+    fd = os.open(_tried_path(slug), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    with os.fdopen(fd, "a") as f:  # paid once per post, found or not
+        f.write("".join(_post_key(u) + "\n" for u in urls))
 
 
 def reddit_lookup_estimate(n: int) -> float:
@@ -537,10 +598,14 @@ def reddit_lookup_estimate(n: int) -> float:
 def lookup_reddit_authors(ctx) -> None:
     """Fill author_profile_url for Reddit sheet rows (Apify trudax/reddit-scraper-lite, start URL = the post)."""
     from gtm.signals import _apify_run
+    from gtm.sources import apify
     todo = reddit_rows_missing_author(ctx.slug)[:ctx.cfg.signals.reddit_authors.max_per_run]
     if not todo:
         return
     ids = {_REDDIT_POST.match(r["post_url"]).group(1).lower(): r["post_url"] for r in todo}
+    if not ctx.get_ref("collect").get("reddit_authors_run"):
+        apify.client()  # no key -> ApifyUnavailable: skipped with a note, nothing marked
+        _mark_tried(ctx.slug, ids.values())  # before paying: a crash later can't make us pay again
     run_input = {"startUrls": [{"url": u} for u in ids.values()], "skipComments": True, "skipUserPosts": True,
                  "skipCommunity": True, "maxItems": 2 * len(ids), "maxPostCount": len(ids)}  # default 10 would cut it
     items = _apify_run(ctx, "reddit", "reddit_authors_run", run_input, 2 * len(ids), "Reddit author lookup")
@@ -552,21 +617,18 @@ def lookup_reddit_authors(ctx) -> None:
         pid = (it.get("parsedId") or (m.group(1) if m else "")).lower()
         prof = profile_url("reddit", it.get("username"))
         if pid in ids and prof:
-            found[ids[pid]] = prof
+            found[pid] = prof
     blocked = _blocked(ctx.slug)
     rows = read_sheet(ctx.slug)  # re-read: the founder may have removed rows meanwhile
     filled = 0
     for r in rows:
-        prof = found.get(r["post_url"])
+        m = r["source"] == "reddit" and _REDDIT_POST.match(r["post_url"])
+        prof = found.get(m.group(1).lower()) if m else None  # every sheet URL form of the same post
         if prof and not r["author_profile_url"] and sha256(prof) not in blocked:
             r["author_profile_url"] = prof
             filled += 1
     if filled:
         _write_sheet(ctx.slug, rows)
-    ensure_private_dir(product_data_dir(ctx.slug))
-    fd = os.open(_tried_path(ctx.slug), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
-    with os.fdopen(fd, "a") as f:  # paid once per post, found or not
-        f.write("".join(sha256(u) + "\n" for u in ids.values()))
     ctx.count("reddit_authors_found", filled)
     if filled < len(ids):
         ctx.note(f"Reddit author lookup: {len(ids) - filled} of {len(ids)} posts gave no author (deleted or removed)")

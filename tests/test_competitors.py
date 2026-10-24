@@ -73,7 +73,9 @@ def test_brief_written_with_sources(world):
     finally:
         fake.COMPETITOR_PAGES["/pricing"] = fake.COMPETITOR_PAGES["/pricing"].replace("$79", "$49")
     assert [ch["url"] for ch in again["changes"]] == ["https://rivalcart.example/pricing"]
-    assert len(kb.all_memories(SLUG, category="competitor")) == 4  # replaced, plus the change fact
+    after = kb.all_memories(SLUG, category="competitor")
+    # replaced, plus the change fact; the model's stale "$49" claim no longer matches the page ($79): dropped
+    assert len(after) == 3 and not any("$49" in f["text"] for f in after)
     assert "pricing page changed" in (competitors.brief_dir(SLUG) / "rivalcart.md").read_text()
 
 

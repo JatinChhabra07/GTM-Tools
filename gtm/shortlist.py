@@ -27,6 +27,8 @@ LENSES = {
     "risk": "Risk: competitor, existing client, vendor, reseller, compliance risk, or a company we "
             "could only reach with a reference that would feel creepy.",
 }
+# calls kept for qualify + write after the panel: never pay for leads this run can't check and write
+DOWNSTREAM_RESERVE = 12
 # max5x keeps 2 reviewers
 MERGED = {"fit": ("icp_lookalike",), "truth_risk": ("signal_truth", "risk")}
 
@@ -79,9 +81,10 @@ def run(ctx) -> None:
     if not pool:
         return
     review_lenses = lenses(ctx)
-    if ctx.llm.remaining < len(review_lenses) + 2:
-        ctx.note(f"shortlist skipped: {ctx.llm.remaining} isolated calls left, the panel needs "
-                 f"{len(review_lenses) + 2}; nothing paid for this run")
+    need = len(review_lenses) + 2 + DOWNSTREAM_RESERVE
+    if ctx.llm.remaining < need:
+        ctx.note(f"shortlist skipped: {ctx.llm.remaining} isolated calls left, the panel plus checking and "
+                 f"writing need {need}; nothing paid for this run")
         return
 
     n_clients = ctx.conn.execute("SELECT count(*) FROM clients").fetchone()[0]
@@ -113,7 +116,9 @@ def run(ctx) -> None:
                 findings[f.domain].append({"from": name, "verdict": f.verdict, "penalty": f.penalty,
                                            "reason": f.reason[:300]})
 
-    synth = ctx.llm.json("shortlist_synth", {**base, "findings": findings}, ShortlistSynthOut) if reviewed else None
+    # every lens must answer: a lens that didn't is an unreviewed risk, and we don't pay on half a review
+    synth = (ctx.llm.json("shortlist_synth", {**base, "findings": findings}, ShortlistSynthOut)
+             if reviewed == len(review_lenses) else None)
     if synth is None:
         ctx.note("shortlist panel gave no usable answer: nothing paid for this run")
         for a in pool:
@@ -162,12 +167,15 @@ def kept(ctx) -> list[sqlite3.Row]:
 
 
 def cooling_down(ctx, domain: str) -> bool:
-    """Dropped by the panel within the cooldown, and nothing new observed since."""
+    """Dropped by the panel within the cooldown, and no new intent/trigger signal since."""
     since = (now() - timedelta(days=ctx.cfg.discovery.shortlist_cooldown_days)).isoformat(timespec="seconds")
     row = ctx.conn.execute("SELECT max(at) AS at FROM shortlist WHERE domain = ? AND verdict = 'drop' AND at >= ?",
                            (domain, since)).fetchone()
     if not row or not row["at"]:
         return False
-    newer = ctx.conn.execute("SELECT 1 FROM observations WHERE account_domain = ? AND observed_at > ? LIMIT 1",
-                             (domain, row["at"])).fetchone()
+    # only a new buying signal reopens it: re-profiling (firmographics) or a weekly re-mined
+    # competitor-customer fact is not news
+    newer = ctx.conn.execute(
+        "SELECT 1 FROM observations o JOIN signal_codes c ON c.code = o.signal_code WHERE o.account_domain = ? "
+        "AND o.observed_at > ? AND c.kind IN ('intent','trigger') LIMIT 1", (domain, row["at"])).fetchone()
     return newer is None

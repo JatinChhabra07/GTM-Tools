@@ -101,7 +101,8 @@ RETENTION_DAYS = 90
 
 def prune_old_files(slug: str, days: int = RETENTION_DAYS) -> int:
     """Retention (plan §6.1): run folders and cron logs older than `days` are deleted; the intent
-    sheet stays, but its rows older than `days` are dropped. Returns files + rows removed."""
+    sheet stays, but its rows older than `days` are dropped, and so are stored posts that never
+    became a lead. Returns files + rows removed."""
     import shutil
     import time
     from gtm.paths import product_data_dir
@@ -119,8 +120,10 @@ def prune_old_files(slug: str, days: int = RETENTION_DAYS) -> int:
             if f.suffix == ".log" and f.stat().st_mtime < cutoff:
                 f.unlink(missing_ok=True)
                 removed += 1
-    from gtm.social import prune_sheet
+    from gtm import store
+    from gtm.social import prune_posts, prune_sheet
     removed += prune_sheet(slug, days)
+    removed += prune_posts(store.open_state(slug), days)
     return removed
 
 

@@ -97,6 +97,10 @@ def forget_in_product(slug: str, email: str) -> dict:
             out["memories"] += kb.forget_lead(slug, lk)
         except kb.KBError:
             pass
+    from gtm import social
+    profiles = [lead["linkedin_url"] for lead in leads if lead["linkedin_url"]]
+    if profiles:  # their posts, the observations / discovery hits citing them, intent-sheet rows
+        out["social"] = social.purge_person(conn, slug, profiles)
     out["run_files"] = _redact_runs(slug, [n for n in needles if n])
     return out
 

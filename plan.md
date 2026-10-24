@@ -1088,3 +1088,33 @@ time, and only an actor that returns the reviewer's company and has a clear pric
   - Migrations in order: v5 shortlist, v6 accounts rebuild, v7 discovery_hits.
   - `competitors.record_customer` now records the `competitor` engine hit.
   - 369 tests pass.
+
+### 15.6 Independent review of discovery v2 (2026-10-24), all fixed with regression tests (`tests/test_discovery_review.py`)
+None of the findings allowed sending, approving or paying for enrichment without the shortlist
+panel.
+- **Privacy:**
+  - A person's LinkedIn post URL was stored as engine evidence; it now uses the company's evidence.
+  - `sheet --remove` only edited the CSV; it now also purges the author's posts and the
+    observations/discovery rows citing them (`social.purge_person`).
+  - `forget` now runs the same purge for the lead's profiles.
+  - The intent sheet now refuses globally suppressed LinkedIn profiles.
+  - Stored anonymous posts are pruned after 90 days.
+- **Prompt injection:** a competitor-brief claim must be supported by the page it cites (≥ 60% of
+  its words and every number appear there) and must not read as an instruction. The writer now gets
+  competitor facts in an untrusted block. Review themes that name a person are dropped. A side
+  effect, tested: a stale price the page no longer shows is dropped.
+- **Money:**
+  - The Reddit lookup was quoted at $0.01 a run in `/gtm-icp` when the real figure is up to $0.16;
+    fixed.
+  - With only `COMPETITOR_REVIEW_NEGATIVE` confirmed, reviews were bought but never recorded; now
+    the negative review is recorded and only unhappy reviewers' companies become accounts.
+  - Every competitor find now needs the code it will be recorded under (`record_customer(requires=)`).
+- **Behaviour:**
+  - The shortlist cooldown ended on any observation; now only a new intent or trigger signal ends it.
+  - The shortlist now keeps 12 calls for qualify and write, and pays only when every lens answered.
+  - Enrich re-runs the free checks (suppressed, client, navigation) on kept accounts, because a
+    resumed run can come hours later.
+  - The Reddit lookup marks posts as tried by post id before paying, so a crash or two URL forms
+    can't pay twice.
+  - The discovery backfill commits with a marker, so a crash can't skip it; accounts with an unknown
+    find date count all-time only.

@@ -288,16 +288,42 @@ def _norm_url(u: str) -> str:
     return (u or "").strip().rstrip("/")
 
 
-def valid_claims(claims, own_urls: set[str], review_urls: set[str]) -> list[dict]:
-    """Keep a claim only if it cites a page we gave, of the right kind, without personal data."""
-    own, rev = {_norm_url(u) for u in own_urls}, {_norm_url(u) for u in review_urls}
+_WORD = re.compile(r"[a-z][a-z0-9'-]{3,}")
+_NUMBER = re.compile(r"\d[\d,.]*")
+# a claim is a fact about the competitor, never a message to us or to the writer
+_INSTRUCTION = re.compile(r"\b(ignore|disregard|instruction|prompt|system|assistant|writer|the reader|"
+                          r"tell (?:the|them|him|her)|you (?:must|should)|do not|don't)\b", re.I)
+GROUNDING = 0.6
+# "John at Acme", "Sarah K." style person references: themes are about the product, never a reviewer
+_PERSON = re.compile(r"\b[A-Z][a-z]{1,15} (?:[A-Z]\.|at [A-Z]|from [A-Z])")
+
+
+def grounded(text: str, page: str) -> bool:
+    """Most of the claim's words, and every number in it, appear on the page it cites."""
+    page_l = page.lower()
+    words = set(_WORD.findall(text.lower()))
+    page_words = set(_WORD.findall(page_l))
+    if not words or len(words & page_words) / len(words) < GROUNDING:
+        return False
+    return all(n.rstrip(".,") in page_l for n in _NUMBER.findall(text))
+
+
+def valid_claims(claims, own_pages: dict[str, str], review_pages_text: dict[str, str]) -> list[dict]:
+    """Keep a claim only if it cites a page we gave, of the right kind, is supported by that page's
+    text (an injected sentence the model made up can't pass), reads as a fact, not an instruction,
+    and carries no personal data."""
+    own = {_norm_url(u): t for u, t in own_pages.items()}
+    rev = {_norm_url(u): t for u, t in review_pages_text.items()}
     out, seen, per_kind = [], set(), {}
     for c in claims:
         src = _norm_url(c.source_url)
-        if (c.kind in OWN_KINDS and src not in own) or (c.kind in REVIEW_KINDS and src not in rev):
+        pages = own if c.kind in OWN_KINDS else rev if c.kind in REVIEW_KINDS else {}
+        if src not in pages:
             continue
         text = re.sub(r"\s+", " ", c.text or "").strip()
-        if not text or len(text) > 300 or has_pii(text) or "<untrusted" in text.lower():
+        if not text or len(text) > 300 or has_pii(text) or "<untrusted" in text.lower() or _INSTRUCTION.search(text):
+            continue
+        if not grounded(text, pages[src]):
             continue
         key = normalize_text(text)
         if key in seen or per_kind.get(c.kind, 0) >= KIND_CAP[c.kind]:
@@ -370,7 +396,7 @@ def analyze(conn: sqlite3.Connection, session, cfg: ProductConfig, entry: str, n
     if out is None:
         notes.note(f"{name}: the brief call gave no usable answer; nothing was changed")
         return {"name": name, "domain": domain, "status": "no_answer"}
-    facts = valid_claims(out.claims, {p["url"] for p in own}, {r["url"] for r in reviews})
+    facts = valid_claims(out.claims, {p["url"]: p["markdown"] for p in own}, {r["url"]: r["markdown"] for r in reviews})
     data = dict(cached or {})
     data.update(entry=entry.strip(), name=name, domain=domain, domain_evidence=evidence, analyzed_at=now_iso(),
                 pages=[p["url"] for p in own], facts=facts,
@@ -540,15 +566,19 @@ def _read_page(wigolo, http, url: str, comp_domain: str) -> tuple[str, str, str]
 
 
 def record_customer(conn, cfg: ProductConfig, *, competitor: str, domain: str, name: str, account_evidence: str,
-                    evidence: str, confidence: float, collector: str, run_id: str | None) -> tuple[bool, bool]:
-    """(account created, observation recorded). Never the competitor, our product or a junk host."""
+                    evidence: str, confidence: float, collector: str, run_id: str | None,
+                    requires: str = "COMPETITOR_CUSTOMER") -> tuple[bool, bool]:
+    """(account created, observation recorded). Never the competitor, our product or a junk host, and
+    no account unless `requires` (the code this find will be recorded under) is confirmed."""
     d = domain_of(domain)
-    if not d or "." not in d or accounts.is_junk(d) or is_competitor(d, cfg):
+    if not d or "." not in d or accounts.is_junk(d) or is_competitor(d, cfg) or not obs.is_confirmed(conn, requires):
         return False, False
     created = accounts.ensure_account(conn, domain=d, name=name, source="competitor", evidence=account_evidence)
     if not conn.execute("SELECT 1 FROM accounts WHERE domain = ?", (d,)).fetchone():
         return False, False
-    discovery.record(conn, d, "competitor", evidence_url=evidence, detail=f"{competitor}: {collector}")
+    # a person's post is never stored as engine evidence (forget can't reach it): the company's own evidence is
+    discovery.record(conn, d, "competitor", evidence_url=account_evidence if collector == "competitor_post" else evidence,
+                     detail=f"{competitor}: {collector}")
     rec = obs.record(conn, account_domain=d, signal_code="COMPETITOR_CUSTOMER", collector=collector,
                      evidence_url=evidence, confidence=confidence, value_text=competitor, run_id=run_id)
     return created, rec is not None
@@ -733,7 +763,8 @@ def reviews(conn, session, cfg: ProductConfig, data: dict, plan: list[dict], cli
     for t in out.themes:
         r = items.get(t.review_id.removeprefix("review:"))
         text = re.sub(r"\s+", " ", t.text).strip()
-        if not r or not text or len(text) > 300 or has_pii(text) or normalize_text(text) in seen:
+        if not r or not text or len(text) > 300 or has_pii(text) or _INSTRUCTION.search(text) \
+                or _PERSON.search(text) or normalize_text(text) in seen:
             continue
         seen.add(normalize_text(text))
         if sum(x["kind"] == t.kind for x in themes) < KIND_CAP[t.kind]:
@@ -754,11 +785,18 @@ def reviews(conn, session, cfg: ProductConfig, data: dict, plan: list[dict], cli
             continue
         d, ev = resolved[employer]
         for r in revs:
+            negative = r.get("rating") is not None and r["rating"] <= 3
+            # with only COMPETITOR_REVIEW_NEGATIVE confirmed, only an unhappy reviewer's company is worth an account
+            requires = "COMPETITOR_CUSTOMER" if obs.is_confirmed(conn, "COMPETITOR_CUSTOMER") else "COMPETITOR_REVIEW_NEGATIVE"
+            if requires == "COMPETITOR_REVIEW_NEGATIVE" and not negative:
+                continue
             c, rec = record_customer(conn, cfg, competitor=data["name"], domain=d, name=employer, account_evidence=ev,
-                                     evidence=r["url"], confidence=0.7, collector=f"review:{r['site']}", run_id=run_id)
+                                     evidence=r["url"], confidence=0.7, collector=f"review:{r['site']}", run_id=run_id,
+                                     requires=requires)
             res["accounts_new"] += c
             res["observations"] += rec
-            if rec and r.get("rating") is not None and r["rating"] <= 3:
+            exists = conn.execute("SELECT 1 FROM accounts WHERE domain = ?", (domain_of(d),)).fetchone()
+            if exists and negative:
                 s = strength(r["rating"])
                 res["observations"] += obs.record(
                     conn, account_domain=domain_of(d), signal_code="COMPETITOR_REVIEW_NEGATIVE",

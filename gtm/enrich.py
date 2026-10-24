@@ -194,7 +194,10 @@ def run(ctx) -> None:
     if not ctx.cfg.personas:
         ctx.note("no personas yet: run /gtm-icp")
         return
-    accts = shortlist.kept(ctx)  # only accounts the panel picked are paid for
+    # only accounts the panel picked are paid for; a resumed run may come hours later, so the free
+    # checks (suppressed, now a client, navigation) are re-run before paying
+    eligible = {a["domain"] for a in candidate_pool(ctx, 10_000)}
+    accts = [a for a in shortlist.kept(ctx) if a["domain"] in eligible]
     ctx.count("enrich_accounts", len(accts))
     if not accts:
         return

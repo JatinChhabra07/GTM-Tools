@@ -41,7 +41,10 @@ domain (`.in`, `.de`...) can only add a block, never unblock.
   confirms the cost. Reviewer names are never stored: only aggregate complaint/praise themes
   (linked to one review) and, when a review's text names the reviewer's own company, that
   company as an account with the review URL as evidence. Competitor facts in emails must come
-  from a sourced fact and are never disparaging.
+  from a sourced fact and are never disparaging. A fact is kept only if the page it cites
+  supports it (most of its words and every number appear there) and it reads as a fact, not an
+  instruction; the writer receives these facts as untrusted data. Theme text that names a person
+  is dropped.
 - Reports and Claude sessions see aggregates only: no email bodies, addresses or reply text.
 
 ## Opt-out, suppression and erasure
@@ -50,16 +53,24 @@ domain (`.in`, `.de`...) can only add a block, never unblock.
   Unsubscribed in every campaign. Bounces are suppressed too.
 - `bin/gtm forget <email>` (founder's terminal): deletes the person's rows in every product,
   redacts run files, deletes their knowledge-base memories and mem0 history rows, adds email and
-  LinkedIn hashes to permanent suppression, logs the erasure, and blocks them in Snov. **Snov has no
+  LinkedIn hashes to permanent suppression, logs the erasure, and blocks them in Snov. It also
+  removes their social footprint: posts they wrote, observations and discovery records citing those
+  posts, and their intent-sheet rows; a suppressed LinkedIn profile is never added to the sheet again. **Snov has no
   API to delete a prospect**, so a manual action ("delete from every Snov list") is queued and shown
   in `bin/gtm manual list` until done.
 - Intent sheet: `bin/gtm sheet --product <slug> --remove <post or profile URL>` deletes the matching
-  rows and stores only a hash of the URL so the row is never added again.
+  rows, that author's stored posts and anything citing them (observations, discovery records), and
+  stores only a hash of the URL so the row is never added again. This is the erasure path for
+  people we hold no email for (Reddit, Hacker News, forum posters).
 
 ## Retention
 - Run folders and cron logs: deleted after 90 days (daily feedback pass).
 - Intent sheet rows: dropped 90 days after the date they were found (same daily pass); the file
   itself is kept.
+- Stored social posts that never became a lead: deleted 90 days after they were labelled, together
+  with the observations and discovery records that cite them (same daily pass).
+- Engine attribution (`discovery_hits`) never stores a person's post URL: a find through someone's
+  post is recorded with the company's own evidence.
 - Apify datasets are unnamed (Apify's own default expiry applies).
 - Suppression hashes and the erasure log are kept indefinitely (they exist to keep people out).
 

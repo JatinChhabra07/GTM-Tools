@@ -173,7 +173,15 @@ def test_backfill_is_idempotent_and_runs_on_upgrade(world):
     # an existing database upgraded to this schema is attributed once, by open_state
     conn.execute("DELETE FROM discovery_hits")
     conn.execute("DROP TABLE discovery_hits")
-    conn.execute(f"PRAGMA user_version = {store._DISCOVERY_VERSION - 1}")
+    version = next(i for i, m in enumerate(store.STATE_MIGRATIONS, 1) if "CREATE TABLE discovery_hits" in m)
+    conn.execute(f"PRAGMA user_version = {version - 1}")
+    conn.execute("DELETE FROM watermarks WHERE source = 'discovery_backfill'")
+    conn.close()
+    assert ("sig.example", "social") in _hits(store.open_state(SLUG))
+    # a crash after the migration but before the backfill committed: the next open still backfills
+    conn = store.open_state(SLUG)
+    conn.execute("DELETE FROM discovery_hits")
+    conn.execute("DELETE FROM watermarks WHERE source = 'discovery_backfill'")
     conn.close()
     assert ("sig.example", "social") in _hits(store.open_state(SLUG))
 
