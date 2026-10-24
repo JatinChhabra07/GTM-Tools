@@ -149,13 +149,16 @@ def _graph(ctx, graph, sheets, snapshot, rub) -> None:
     if any(out is None for _, out in reviews):
         ctx.note("a reviewer returned no valid answer: its lens counts as unreviewed (leads need synth + recheck)")
 
-    synth = ctx.llm.json("qualify_synth", {**base, "findings": findings}, SynthOut)
+    # reviewers wrote their reasons after reading scraped data: the synth gets them as data, not as instructions
+    synth = ctx.llm.json("qualify_synth", base, SynthOut,
+                         untrusted_blocks={"reviewer_findings": json.dumps(findings, indent=1)})
     verdicts = {v.lead_key: v for v in (synth.verdicts if synth else [])}
     rework = [lk for lk in keys if lk in verdicts and verdicts[lk].verdict == "needs_rework"]
     if rework and ctx.llm.remaining >= 1:
-        re_out = ctx.llm.json("qualify_recheck", {**base, "lead_keys": rework,
-                                                  "open_questions": {lk: findings[lk] for lk in rework}},
-                              SynthOut, untrusted_blocks={f"lead:{lk}": sheets[lk] for lk in rework})
+        questions = json.dumps({lk: findings[lk] for lk in rework}, indent=1)
+        re_out = ctx.llm.json("qualify_recheck", {**base, "lead_keys": rework}, SynthOut,
+                              untrusted_blocks={**{f"lead:{lk}": sheets[lk] for lk in rework},
+                                                "open_questions": questions})
         for v in (re_out.verdicts if re_out else []):
             if v.lead_key in rework and v.verdict in ("keep", "drop"):
                 verdicts[v.lead_key] = v

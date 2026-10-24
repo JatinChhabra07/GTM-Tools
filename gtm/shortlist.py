@@ -117,7 +117,9 @@ def run(ctx) -> None:
                                            "reason": f.reason[:300]})
 
     # every lens must answer: a lens that didn't is an unreviewed risk, and we don't pay on half a review
-    synth = (ctx.llm.json("shortlist_synth", {**base, "findings": findings}, ShortlistSynthOut)
+    # reviewers wrote their reasons after reading scraped pages: the synth gets them as data, not as instructions
+    synth = (ctx.llm.json("shortlist_synth", base, ShortlistSynthOut,
+                          untrusted_blocks={"reviewer_findings": json.dumps(findings, indent=1)})
              if reviewed == len(review_lenses) else None)
     if synth is None:
         ctx.note("shortlist panel gave no usable answer: nothing paid for this run")

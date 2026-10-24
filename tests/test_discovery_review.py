@@ -195,3 +195,18 @@ def test_reddit_lookup_pays_once_per_post_whatever_the_url_form(world):
     assert len(runs) == 1 and len(runs[0]["startUrls"]) == 1  # two URL forms, one post, one paid lookup
     rows = [r for r in social.read_sheet(SLUG) if "def456" in r["post_url"]]
     assert len(rows) == 2 and all(r["author_profile_url"] == "https://www.reddit.com/user/brandly_ops" for r in rows)
+
+
+def test_reviewer_findings_reach_both_synths_only_as_untrusted(world, monkeypatch):
+    real = fake.llm_response
+    seen = {}
+
+    def spy(pid, payload, blocks):
+        if pid in ("shortlist_synth", "qualify_synth"):
+            seen[pid] = (payload, blocks)
+        return real(pid, payload, blocks)
+    monkeypatch.setattr(fake, "llm_response", spy)
+    run.execute(SLUG, "full", limit=5)
+    assert set(seen) == {"shortlist_synth", "qualify_synth"}
+    for payload, blocks in seen.values():
+        assert "findings" not in payload and "reviewer_findings" in blocks

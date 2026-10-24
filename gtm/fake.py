@@ -308,7 +308,7 @@ def llm_response(prompt_id: str, payload: dict, blocks: dict) -> dict:
             out.append({"lead_key": lk, "verdict": "drop" if bad else "ok", "reason": "competitor" if bad else ""})
         return {"findings": out}
     if prompt_id in ("qualify_synth", "qualify_recheck"):
-        findings = payload.get("findings") or payload.get("open_questions") or {}
+        findings = json.loads(blocks.get("reviewer_findings") or blocks.get("open_questions") or "{}")
         return {"verdicts": [{"lead_key": k, "verdict": "drop" if any(f["verdict"] == "drop" for f in findings.get(k, []))
                               else "keep", "penalty": 0, "reason": ""} for k in payload["lead_keys"]]}
     if prompt_id == "shortlist_worker":
@@ -320,7 +320,7 @@ def llm_response(prompt_id: str, payload: dict, blocks: dict) -> dict:
             out.append({"domain": d, "verdict": "drop" if bad else "ok", "reason": "fake drop" if bad else ""})
         return {"findings": out}
     if prompt_id == "shortlist_synth":
-        f = payload["findings"]
+        f = json.loads(blocks["reviewer_findings"])
         return {"verdicts": [{"domain": d, "verdict": "drop" if any(x["verdict"] == "drop" for x in f.get(d, []))
                               else "keep", "penalty": 0, "reason": ""} for d in payload["domains"]]}
     if prompt_id == "write_sequence":

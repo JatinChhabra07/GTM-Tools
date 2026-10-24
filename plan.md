@@ -1118,3 +1118,8 @@ panel.
     can't pay twice.
   - The discovery backfill commits with a marker, so a crash can't skip it; accounts with an unknown
     find date count all-time only.
+- **Last open review point, fixed (2026-10-24):** the shortlist and qualify synths (and the
+  qualify re-check) now get the reviewers' findings as an untrusted block, not as trusted input,
+  because the reviewers wrote them after reading scraped data. Live re-check: the real model gave
+  the same correct verdicts in 4 calls (keep the D2C store; drop the reseller and the injected
+  account). 383 tests.
