@@ -326,3 +326,38 @@ def test_profile_match_needs_the_whole_name_and_the_company():
     post = {"url": "https://www.linkedin.com/posts/x_activity-1", "title": "Saahil Goel Shiprocket"}
     assert profile_match(post, "Saahil Goel", "Shiprocket", "shiprocket.in") is None  # a post, not a profile
     assert profile_match(hit, "Naaptol", "Naaptol", "naaptol.com") is None  # one-word "names" are not people
+
+
+def test_employees_actor_gets_a_limit_and_its_current_output_is_read():
+    """Live 2026-10-26: without input maxItems the actor returned nobody; its items now use
+    currentPositions[] and _meta.query instead of currentPosition[]."""
+    from gtm.sources import apify
+    inp = apify.employees_input(["https://www.linkedin.com/company/acme?trk=x"], job_titles=["CEO"], per_company=4)
+    assert inp["maxItems"] == 4 and inp["companies"] == ["https://www.linkedin.com/company/acme"]
+
+    from gtm import enrich
+
+    class Client:
+        def start(self, *a, **k): return "run1"
+        def wait(self, run_id): return SimpleNamespace(usage_usd=0.01)
+        def items(self, info, limit): return [
+            {"firstName": "Asha", "lastName": "Rao", "linkedinUrl": "https://www.linkedin.com/in/ACwAA1?x=1",
+             "currentPositions": [{"title": "Facilities Manager", "companyName": "Acme Ltd",
+                                   "companyLinkedinUrl": "https://www.linkedin.com/company/12345/"}],
+             "location": {"linkedinText": "Bengaluru, Karnataka, India"},
+             "_meta": {"query": {"currentCompanies": ["https://www.linkedin.com/company/acme"]}}}]
+    budget = SimpleNamespace(apify_left=1.0, reserve_apify=lambda est, what: est, charge_apify=lambda *a: None)
+    refs = {}
+    ctx = SimpleNamespace(budget=budget, cfg=SimpleNamespace(personas=[SimpleNamespace(titles=["Facilities Manager"])]),
+                          get_ref=lambda step: refs, set_ref=lambda step, k, v: refs.update({k: v}))
+    import gtm.sources.apify as ap
+    orig = ap.client
+    ap.client = lambda: Client()
+    try:
+        out = enrich._people_from_linkedin(ctx, [{"domain": "acme.in", "name": "Acme",
+                                                  "linkedin_url": "https://www.linkedin.com/company/acme/"}])
+    finally:
+        ap.client = orig
+    assert out == {"acme.in": [{"name": "Asha Rao", "title": "Facilities Manager",
+                                "linkedin_url": "https://www.linkedin.com/in/ACwAA1", "country": "IN",
+                                "evidence": "https://www.linkedin.com/in/ACwAA1", "source": "linkedin"}]}

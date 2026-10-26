@@ -29,6 +29,7 @@ LENSES = {
 }
 # calls kept for qualify + write after the panel: never pay for leads this run can't check and write
 DOWNSTREAM_RESERVE = 12
+PANEL_BATCH = 20
 # max5x keeps 2 reviewers
 MERGED = {"fit": ("icp_lookalike",), "truth_risk": ("signal_truth", "risk")}
 
@@ -89,8 +90,33 @@ def run(ctx) -> None:
 
     n_clients = ctx.conn.execute("SELECT count(*) FROM clients").fetchone()[0]
     rub = rubric(ctx, n_clients, quota)
-    domains = [a["domain"] for a in pool]
-    blocks = {f"account:{a['domain']}": fact_sheet(ctx, a) for a in pool}
+    (ctx.run_dir / "shortlist_rubric.json").write_text(json.dumps(rub, indent=2))
+    # the panel reads PANEL_BATCH companies per round: one huge round made reviewers skip companies
+    # (live VizitorApp run). The pool is ordered best first, so rounds stop once enough companies passed.
+    passed: list[tuple] = []
+    for start in range(0, len(pool), PANEL_BATCH):
+        if len(passed) >= quota:
+            break
+        if start and ctx.llm.remaining < len(review_lenses) + 2 + DOWNSTREAM_RESERVE:
+            ctx.note(f"shortlist stopped after {start} of {len(pool)} companies: the call budget is kept for "
+                     "checking and writing")
+            break
+        passed += _panel(ctx, pool[start:start + PANEL_BATCH], start, rub, review_lenses)
+    passed.sort(key=lambda x: x[:2])
+    for rank, (_, _, a, final, reason, found) in enumerate(passed):
+        if rank < quota:
+            _save(ctx, a, "keep", final, reason, found)
+            ctx.count("shortlist_kept")
+        else:
+            _save(ctx, a, "not_picked", final, f"beyond today's quota of {quota}", found)
+            ctx.count("shortlist_not_picked")
+
+
+def _panel(ctx, batch: list[sqlite3.Row], offset: int, rub: dict, review_lenses: dict[str, str]) -> list[tuple]:
+    """One panel round (worker -> refuting lenses -> synth) over a batch. Saves drops and
+    not-picked; returns the passed companies as (-final, order, account, final, reason, findings)."""
+    domains = [a["domain"] for a in batch]
+    blocks = {f"account:{a['domain']}": fact_sheet(ctx, a) for a in batch}
     base = {"rubric": rub, "product": ctx.cfg.product.name, "icp": ctx.cfg.icp.model_dump(),
             "anti_icp": ctx.cfg.anti_icp, "personas": [p.model_dump() for p in ctx.cfg.personas],
             "domains": domains}
@@ -129,14 +155,14 @@ def run(ctx) -> None:
                           untrusted_blocks={"reviewer_findings": json.dumps(findings, indent=1)})
              if reviewed == len(review_lenses) else None)
     if synth is None:
-        ctx.note("shortlist panel gave no usable answer: nothing paid for this run")
-        for a in pool:
+        ctx.note("shortlist panel gave no usable answer for one round: nothing paid for those companies")
+        for a in batch:
             _save(ctx, a, "not_picked", None, "panel gave no answer", findings[a["domain"]])
-        return
+        return []
     verdicts = {d: v for v in synth.verdicts if (d := match(v.domain))}
 
     passed = []
-    for i, a in enumerate(pool):
+    for i, a in enumerate(batch):
         v = verdicts.get(a["domain"])
         if v is None:
             _save(ctx, a, "not_picked", None, "no verdict from the panel", findings[a["domain"]])
@@ -151,16 +177,8 @@ def run(ctx) -> None:
             _save(ctx, a, "drop", final, v.reason[:300] or "reviewers", findings[a["domain"]])
             ctx.count("shortlist_dropped")
         else:
-            passed.append((-final, i, a, final))
-    passed.sort(key=lambda x: x[:2])
-    for rank, (_, _, a, final) in enumerate(passed):
-        if rank < quota:
-            _save(ctx, a, "keep", final, verdicts[a["domain"]].reason[:300] or None, findings[a["domain"]])
-            ctx.count("shortlist_kept")
-        else:
-            _save(ctx, a, "not_picked", final, f"beyond today's quota of {quota}", findings[a["domain"]])
-            ctx.count("shortlist_not_picked")
-    (ctx.run_dir / "shortlist_rubric.json").write_text(json.dumps(rub, indent=2))
+            passed.append((-final, offset + i, a, final, v.reason[:300] or None, findings[a["domain"]]))
+    return passed
 
 
 def _save(ctx, account, verdict: str, final, reason, findings) -> None:

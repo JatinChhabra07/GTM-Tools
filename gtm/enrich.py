@@ -14,6 +14,7 @@ import re
 import sqlite3
 
 from gtm import email_finder, gates, ledger
+from gtm.gates import country_code
 from gtm import observations as obs
 from gtm.resolve import lead_key
 from gtm.schemas import PersonaMatches
@@ -143,24 +144,30 @@ def _people_from_linkedin(ctx, accounts_rows: list[sqlite3.Row]) -> dict[str, li
         ctx.set_ref("enrich", "employees", run_id)
     info = client.wait(run_id)
     ctx.budget.charge_apify(info.usage_usd, "LinkedIn employees", run_id)
-    by_url = {a["linkedin_url"].rstrip("/").lower(): a["domain"] for a in with_url}
+    def norm(u: str | None) -> str:
+        return (u or "").split("?")[0].rstrip("/").lower()
+    by_url = {norm(a["linkedin_url"]): a["domain"] for a in with_url}
     out: dict[str, list[dict]] = {}
     for p in client.items(info, limit=per * len(with_url) * 2):
-        pos = (p.get("currentPosition") or [{}])[0] if p.get("currentPosition") else {}
-        exp = (p.get("experience") or [{}])[0] if p.get("experience") else {}
-        comp_url = (exp.get("companyLinkedinUrl") or "").rstrip("/").lower()
-        domain = by_url.get(comp_url)
+        # current actor output: currentPositions[] (+ _meta.query.currentCompanies = the company searched);
+        # older builds: currentPosition[] / experience[] / headline
+        pos = (p.get("currentPositions") or p.get("currentPosition") or [{}])[0] or {}
+        exp = (p.get("experience") or [{}])[0] or {}
+        searched = ((p.get("_meta") or {}).get("query") or {}).get("currentCompanies") or []
+        domain = (by_url.get(norm(pos.get("companyLinkedinUrl"))) or by_url.get(norm(exp.get("companyLinkedinUrl")))
+                  or (by_url.get(norm(searched[0])) if len(searched) == 1 else None))
         if not domain:
             company = (pos.get("companyName") or exp.get("companyName") or "").lower()
             domain = next((a["domain"] for a in with_url if a["name"] and a["name"].lower() == company), None)
-        if not domain or not p.get("firstName"):
+        if not domain or not p.get("firstName") or not p.get("linkedinUrl"):
             continue
+        loc = p.get("location") or {}
         out.setdefault(domain, []).append({
             "name": f"{p.get('firstName', '')} {p.get('lastName', '')}".strip(),
-            "title": exp.get("position") or p.get("headline"),
-            "linkedin_url": p.get("linkedinUrl"),
-            "country": ((p.get("location") or {}).get("countryCode")),
-            "evidence": p.get("linkedinUrl") or f"https://{domain}/", "source": "linkedin"})
+            "title": pos.get("title") or pos.get("position") or exp.get("position") or p.get("headline"),
+            "linkedin_url": p.get("linkedinUrl").split("?")[0],
+            "country": loc.get("countryCode") or country_code(loc.get("linkedinText")),
+            "evidence": p.get("linkedinUrl").split("?")[0], "source": "linkedin"})
     return out
 
 

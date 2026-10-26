@@ -170,20 +170,37 @@ def _jobs(ctx) -> None:
     client = apify.client()
     step = "collect"
     per_kw = max(10, min(ctx.cfg.budgets.max_items_per_actor // max(1, len(keywords)), 50))
-    for kw in keywords[:5]:
-        ref_key = f"jobs:{kw}"
+    # jobs in the ICP's first two countries: a worldwide search fills the pool with companies we can't email
+    for kw, where in [(k, g) for k in keywords[:5] for g in job_locations(ctx.cfg)]:
+        ref_key = f"jobs:{kw}" + (f"@{where}" if where else "")
         run_id = ctx.get_ref(step).get(ref_key)
         if not run_id:
             est = apify.estimate("jobs", per_kw)
-            cap = ctx.budget.reserve_apify(est, f"jobs '{kw}'")
-            run_id = client.start("jobs", apify.jobs_input(kw, date_posted=date_posted, limit=per_kw),
+            cap = ctx.budget.reserve_apify(est, f"jobs '{kw}' {where}".strip())
+            run_id = client.start("jobs", apify.jobs_input(kw, location=where, date_posted=date_posted, limit=per_kw),
                                   max_items=per_kw, max_charge_usd=cap)
             ctx.set_ref(step, ref_key, run_id)
         info = client.wait(run_id)
-        ctx.budget.charge_apify(info.usage_usd, f"jobs '{kw}'", run_id)
+        ctx.budget.charge_apify(info.usage_usd, f"jobs '{kw}' {where}".strip(), run_id)
         for job in client.items(info, limit=per_kw):
             _record_job(ctx, job, kw)
     _set_watermark(ctx.conn, "apify_jobs")
+
+
+COUNTRY_NAMES = {"IN": "India", "US": "United States", "AE": "United Arab Emirates", "SG": "Singapore",
+                 "AU": "Australia", "NG": "Nigeria", "GB": "United Kingdom", "CA": "Canada"}
+
+
+def job_locations(cfg) -> list[str]:
+    """The first two ICP countries the founder allows, as LinkedIn location names ('' = anywhere)."""
+    from gtm.gates import country_code, geo_rule
+    seen: list[str] = []
+    for seg in cfg.icp.segments:
+        for g in seg.geos:
+            code = country_code(g) or g.upper()
+            if code not in seen and code in COUNTRY_NAMES and geo_rule(cfg, code).status != "blocked":
+                seen.append(code)
+    return [COUNTRY_NAMES[c] for c in seen[:2]] or [""]
 
 
 def _ts(iso: str) -> float:

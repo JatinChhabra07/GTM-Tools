@@ -129,8 +129,11 @@ class Usage(Strict):
 
 class Discovery(Strict):
     """Shortlist before paying (plan §15.2): the AI panel picks the best of the pool."""
-    shortlist_pool: int = Field(50, ge=5, le=100)
+    shortlist_pool: int = Field(80, ge=5, le=150)
     shortlist_cooldown_days: int = Field(14, ge=1, le=90)
+    # leads a run aims for before a sending mailbox is READY (after that, mailbox capacity decides);
+    # the founder's bar is 20-25 filtered high-intent leads, each with a LinkedIn profile or an email
+    leads_per_run: int = Field(25, ge=1, le=60)
 
 
 class Budgets(Strict):

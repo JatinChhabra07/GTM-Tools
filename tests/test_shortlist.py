@@ -158,3 +158,22 @@ def test_reviewer_domains_match_loosely_and_unreviewed_accounts_are_not_dropped(
     assert rows["brandly.example"]["verdict"] == "keep" and rows["brandly.example"]["reason"] == "checked"
     assert any(f["from"] != "worker" for f in json.loads(rows["brandly.example"]["findings_json"]))
     assert rows["shopco.example"]["verdict"] == "not_picked", dict(rows["shopco.example"])
+
+
+def test_panel_reviews_in_rounds_and_stops_when_enough_passed(world, monkeypatch):
+    from gtm import shortlist
+    monkeypatch.setattr(shortlist, "PANEL_BATCH", 1)
+    seen = []
+
+    def spy(pid, payload, blocks, real):
+        if pid == "shortlist_worker":
+            seen.append(tuple(payload["domains"]))
+        return real(pid, payload, blocks)
+    _patch_llm(monkeypatch, spy)
+    res = run.execute(SLUG, "full", limit=1)
+    conn = store.open_state(SLUG)
+    rows = _rows(conn, res["run_id"])
+    assert all(len(d) == 1 for d in seen)  # one company per round
+    assert len(seen) == 1  # the first company passed and filled the quota: no paid-for extra rounds
+    assert sum(r["verdict"] == "keep" for r in rows.values()) == 1
+

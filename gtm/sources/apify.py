@@ -32,7 +32,7 @@ ACTORS = {
 
 # Worst-case USD per result on the FREE/BRONZE tier (docs/tools.md §2.1) + per-run start fees.
 # Used for --estimate and to size charge caps; Apify's own cap is the hard limit.
-PRICE_PER_ITEM = {"posts": 0.002, "company": 0.004, "employees": 0.008, "people": 0.004,
+PRICE_PER_ITEM = {"posts": 0.002, "company": 0.004, "employees": 0.004, "people": 0.004,
                   "jobs": 0.002, "tweets": 0.0004, "instagram": 0.0027, "google": 0.0045,
                   "reddit": 0.004, "g2": 0.004, "capterra": 0.00199, "trustpilot": 0.00025}
 PRICE_PER_RUN = {"employees": 0.02, "people": 0.10, "g2": 0.005, "capterra": 0.005}  # actor-start / first search page
@@ -121,8 +121,12 @@ def company_input(*, urls: list[str] = (), names: list[str] = ()) -> dict:
 
 
 def employees_input(company_urls: list[str], *, job_titles: list[str], per_company: int) -> dict:
-    return {"companies": company_urls, "jobTitles": job_titles, "profileScraperMode": "Full ($8 per 1k)",
-            "maxItemsPerCompany": per_company, "companyBatchMode": "one_by_one"}
+    """Short mode has name, profile link, current title + company: all enrich needs. `maxItems` is
+    required in the INPUT: without it the actor logs "no limits" and returns nobody (seen live
+    2026-10-26, build RualDJzibsseWYkpZ). Tracking params (?trk=...) are stripped from company URLs."""
+    urls = [u.split("?")[0].rstrip("/") for u in company_urls]
+    return {"companies": urls, "jobTitles": job_titles, "profileScraperMode": "Short ($4 per 1k)",
+            "maxItemsPerCompany": per_company, "maxItems": per_company * len(urls), "companyBatchMode": "one_by_one"}
 
 
 def people_input(*, titles: list[str], company_urls: list[str] = (), locations: list[str] = (),

@@ -129,13 +129,13 @@ def _search_and_resolve(ctx, employers: list[str]) -> dict[str, tuple[str, str]]
 def _new_accounts(ctx) -> None:
     """Profile accounts we've never seen (free), LinkedIn company data for the best few (paid), pre-score."""
     fresh = [r["domain"] for r in ctx.conn.execute(
-        "SELECT domain FROM accounts WHERE profile_checked_at IS NULL AND status NOT IN ('dropped') LIMIT 30")]
+        "SELECT domain FROM accounts WHERE profile_checked_at IS NULL AND status NOT IN ('dropped') LIMIT 80")]
     if fresh:
         ctx.count("profiled", accounts.profile_accounts(ctx.conn, ctx.cfg, fresh, run_id=ctx.run_id))
     need = [r["domain"] for r in ctx.conn.execute(
         "SELECT a.domain FROM accounts a WHERE a.linkedin_company_checked_at IS NULL AND a.status NOT IN "
         "('dropped','client','near_miss') AND EXISTS (SELECT 1 FROM observations o JOIN signal_codes c ON "
-        "c.code = o.signal_code WHERE o.account_domain = a.domain AND c.kind IN ('intent','trigger')) LIMIT 25")]
+        "c.code = o.signal_code WHERE o.account_domain = a.domain AND c.kind IN ('intent','trigger')) LIMIT 80")]
     if need and ctx.budget.apify_left > 0.2:
         optional(ctx, "LinkedIn company data", accounts.linkedin_enrich, ctx.conn, ctx.cfg, need,
                  budget=ctx.budget, run_id=ctx.run_id, ref_get=lambda: ctx.get_ref("resolve"),

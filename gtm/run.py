@@ -118,7 +118,7 @@ class Ctx:
 
 def daily_cap(ctx: Ctx) -> int:
     """Leads/day = Σ(mailbox effective cap × product share) / touches per lead (plan §4.2).
-    Before any mailbox is READY, --limit (default 10) is the cap."""
+    Before any mailbox is READY, --limit (default: discovery.leads_per_run) is the cap."""
     from gtm import warmup
     total = 0.0
     for share in ctx.cfg.sending.mailboxes:
@@ -131,7 +131,7 @@ def daily_cap(ctx: Ctx) -> int:
             ready_state=mb["ready_state"], paused=bool(mb["paused"]), on_date=now().date()) * share.share
     cap = int(total // max(1, ctx.cfg.sending.touches))
     if cap <= 0:
-        cap = ctx.limit if ctx.limit is not None else 10
+        cap = ctx.limit if ctx.limit is not None else ctx.cfg.discovery.leads_per_run
     elif ctx.limit is not None:
         cap = min(cap, ctx.limit)
     return cap
