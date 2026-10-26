@@ -19,3 +19,6 @@ __pycache__/
 .gstack/
 *-workspace/
 .claude/worktrees/
+
+# each founder's products (config, crawled pages, clients) stay on their own machine
+products/*/
