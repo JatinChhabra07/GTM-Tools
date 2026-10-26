@@ -423,7 +423,7 @@ def accounts_build(product: str = typer.Option(...), estimate: bool = typer.Opti
         # the paid part covers every target account still without LinkedIn data, not just this call's new ones
         pending = [r[0] for r in conn.execute(
             "SELECT domain FROM accounts WHERE source = 'tal' AND status IN ('new','prequalified','below_cutoff') "
-            "AND linkedin_company_checked_at IS NULL ORDER BY created_at LIMIT ?", (max_new,))]
+            "AND linkedin_company_checked_at IS NULL ORDER BY created_at LIMIT ?", (max(max_new, 60),))]
         cost = apify.estimate("company", len(pending))
         out.update(without_linkedin_data=len(pending), linkedin_data_estimate_usd=cost)
         if confirm and pending:
