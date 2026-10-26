@@ -11,3 +11,5 @@ For every company return `verdict`:
 - `lower`: a real weakness; give `penalty` 0 to -40
 - `ok`: nothing wrong under your lens
 and a short `reason` naming the fact. You cannot raise scores. Don't comment outside your lens.
+Return exactly one finding for EVERY domain in `domains`, spelled exactly as given there (an `ok`
+is an answer too): a company you skip counts as unreviewed and is not considered this run.

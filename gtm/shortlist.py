@@ -17,7 +17,7 @@ from datetime import timedelta
 
 from gtm import observations as obs
 from gtm.schemas import ShortlistReviewOut, ShortlistSynthOut, ShortlistWorkerOut
-from gtm.util import now, now_iso, sanitize_name
+from gtm.util import now, now_iso, registrable_domain, sanitize_name
 
 LENSES = {
     "icp_lookalike": "ICP & lookalike: does the company really match a segment and resemble the clients? "
@@ -95,12 +95,18 @@ def run(ctx) -> None:
             "anti_icp": ctx.cfg.anti_icp, "personas": [p.model_dump() for p in ctx.cfg.personas],
             "domains": domains}
     findings: dict[str, list] = {d: [] for d in domains}
+    reviewed_by: dict[str, set] = {d: set() for d in domains}
+    ours = {registrable_domain(d): d for d in domains}
+
+    def match(d: str) -> str | None:
+        """The model may echo 'www.acme.com' or 'https://acme.com/': map it back to our domain."""
+        return d if d in findings else ours.get(registrable_domain(d or ""))
 
     worker = ctx.llm.json("shortlist_worker", base, ShortlistWorkerOut, untrusted_blocks=blocks)
     for w in (worker.accounts if worker else []):
-        if w.domain in findings:
-            findings[w.domain].append({"from": "worker", "verdict": "lower" if w.penalty else "ok",
-                                       "penalty": w.penalty, "reason": "; ".join(w.concerns)[:300]})
+        if d := match(w.domain):
+            findings[d].append({"from": "worker", "verdict": "lower" if w.penalty else "ok",
+                                "penalty": w.penalty, "reason": "; ".join(w.concerns)[:300]})
 
     def review(item):
         name, question = item
@@ -112,9 +118,10 @@ def run(ctx) -> None:
     reviewed = sum(1 for _, out in reviews if out is not None)
     for name, out in reviews:
         for f in (out.findings if out else []):
-            if f.domain in findings:
-                findings[f.domain].append({"from": name, "verdict": f.verdict, "penalty": f.penalty,
-                                           "reason": f.reason[:300]})
+            if d := match(f.domain):
+                reviewed_by[d].add(name)
+                findings[d].append({"from": name, "verdict": f.verdict, "penalty": f.penalty,
+                                    "reason": f.reason[:300]})
 
     # every lens must answer: a lens that didn't is an unreviewed risk, and we don't pay on half a review
     # reviewers wrote their reasons after reading scraped pages: the synth gets them as data, not as instructions
@@ -126,13 +133,18 @@ def run(ctx) -> None:
         for a in pool:
             _save(ctx, a, "not_picked", None, "panel gave no answer", findings[a["domain"]])
         return
-    verdicts = {v.domain: v for v in synth.verdicts}
+    verdicts = {d: v for v in synth.verdicts if (d := match(v.domain))}
 
     passed = []
     for i, a in enumerate(pool):
         v = verdicts.get(a["domain"])
         if v is None:
             _save(ctx, a, "not_picked", None, "no verdict from the panel", findings[a["domain"]])
+            continue
+        if not reviewed_by[a["domain"]]:
+            # no lens looked at it: neither paid for nor put on cooldown, so the next run reconsiders it
+            _save(ctx, a, "not_picked", None, "no reviewer covered it this run", findings[a["domain"]])
+            ctx.count("shortlist_unreviewed")
             continue
         final = round(max(0.0, (a["prescore"] or 0) + min(0, v.penalty)), 1)
         if v.verdict == "drop":
@@ -143,7 +155,7 @@ def run(ctx) -> None:
     passed.sort(key=lambda x: x[:2])
     for rank, (_, _, a, final) in enumerate(passed):
         if rank < quota:
-            _save(ctx, a, "keep", final, None, findings[a["domain"]])
+            _save(ctx, a, "keep", final, verdicts[a["domain"]].reason[:300] or None, findings[a["domain"]])
             ctx.count("shortlist_kept")
         else:
             _save(ctx, a, "not_picked", final, f"beyond today's quota of {quota}", findings[a["domain"]])

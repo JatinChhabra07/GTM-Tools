@@ -137,3 +137,24 @@ def test_wigolo_registration_never_clobbers(tmp_path):
     mcp.write_text(json.dumps({"mcpServers": data}))
     assert wigolo.register_project(mcp, already_listed=False) == "already in .mcp.json"
     assert json.loads(mcp.read_text())["mcpServers"]["wigolo"]["env"] == {"WIGOLO_SEARCH": "hybrid"}
+
+
+def test_reviewer_domains_match_loosely_and_unreviewed_accounts_are_not_dropped(world, monkeypatch):
+    """Live VizitorApp run: findings echoed as 'www.x' were lost, and the synth then dropped
+    unreviewed companies 'in doubt', putting them on a 14-day cooldown."""
+    def skew(pid, payload, blocks, real):
+        out = real(pid, payload, blocks)
+        if pid == "shortlist_review":
+            out["findings"] = [dict(f, domain="https://www." + f["domain"] + "/") for f in out["findings"]
+                               if f["domain"] != "shopco.example"]  # every lens skips ShopCo
+        if pid == "shortlist_synth":
+            for v in out["verdicts"]:
+                v.update(verdict="drop" if v["domain"] == "shopco.example" else "keep", reason="checked")
+        return out
+    _patch_llm(monkeypatch, skew)
+    res = run.execute(SLUG, "full", limit=5)
+    conn = store.open_state(SLUG)
+    rows = _rows(conn, res["run_id"])
+    assert rows["brandly.example"]["verdict"] == "keep" and rows["brandly.example"]["reason"] == "checked"
+    assert any(f["from"] != "worker" for f in json.loads(rows["brandly.example"]["findings_json"]))
+    assert rows["shopco.example"]["verdict"] == "not_picked", dict(rows["shopco.example"])

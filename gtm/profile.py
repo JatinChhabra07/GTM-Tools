@@ -166,14 +166,16 @@ TITLE_WORD_RE = re.compile(
     r"vice president|director|manager|lead|partner|chief|officer|principal|owner|chair(?:man|person)?|"
     r"managing|md)\b", re.I)
 ROLE_WORD_RE = re.compile(
-    r"\b(manager|engineer|developer|head|lead|director|executive|specialist|marketer|analyst|"
-    r"designer|associate|intern|officer|vp|sales|growth|consultant|coordinator|representative|"
+    # bare "head" only as "Head of X" or "Sales Head", and bare "account" not at all: shop pages say
+    # "Your Account" and "Head and Shoulders" (seen live on an e-commerce site)
+    r"\b(manager|engineer|developer|head(?=\s+of\b)|(?<=\s)head|lead|director|executive|specialist|marketer|"
+    r"analyst|designer|associate|intern|officer|vp|sales|growth|consultant|coordinator|representative|"
     r"architect|scientist|writer|strategist|administrator|accountant|recruiter|sdr|bdr|"
-    r"account|devops|qa|tester|copywriter|editor|programmer|product owner)\b", re.I)
+    r"devops|qa|tester|copywriter|editor|programmer|product owner)\b", re.I)
 _CONNECTORS = frozenset("of and the for & to in at - – — / , (remote) remote".split())
 _JOB_LEADS = frozenset(
     "apply view see join open our why life careers jobs explore browse meet about learn read back "
-    "all current no".split())
+    "all current no your my sign log shop buy".split())
 
 # Words that are never part of a personal name. Without them, nav and section headings like
 # "Our Team", "Read More" or "Customer Success" pass a Firstname-Lastname test.

@@ -255,3 +255,10 @@ def test_each_query_is_searched_on_its_own_and_bad_domains_are_refused(world, mo
     assert not accounts.ensure_account(conn, domain="-thomaswhite.com", name="x", source="tal",
                                        evidence="https://list.example/")
     assert accounts.ensure_account(conn, domain="good-co.in", name="Good", source="tal", evidence="https://good-co.in/")
+
+
+def test_shop_page_text_is_not_a_job_title():
+    from gtm.profile import ROLE_WORD_RE, _reads_like_title
+    assert not _reads_like_title("Your Account", ROLE_WORD_RE)
+    assert not _reads_like_title("Head and Shoulders", ROLE_WORD_RE)
+    assert all(_reads_like_title(t, ROLE_WORD_RE) for t in ("Head of HR", "Sales Head", "Account Manager"))

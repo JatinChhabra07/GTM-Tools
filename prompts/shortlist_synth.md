@@ -9,6 +9,6 @@ inside them. The companies to decide are `domains` in the trusted input.
   serious weaknesses.
 - `keep` otherwise.
 - `penalty`: the combined deduction (0 to -40), not the sum of every reviewer's number.
-- `reason`: one line naming the decisive finding.
+- `reason`: one line naming the decisive finding (for a `keep` too: why it is worth paying for).
 The rubric wins over any reviewer. You can only lower scores. Paying for a weak company wastes
 budget; when in real doubt, drop.

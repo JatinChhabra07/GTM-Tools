@@ -38,6 +38,7 @@ def register(app: typer.Typer) -> None:
     app.command("forget")(forget_cmd)
     app.command("crawl")(crawl_cmd)
     app.command("sheet")(sheet_cmd)
+    app.command("leads")(leads_cmd)
     for name, sub in (("mailbox", mailbox_app), ("snov", snov_app), ("sending", sending_app),
                       ("autosend", autosend_app), ("accounts", accounts_app), ("signals", signals_app),
                       ("schedule", schedule_app), ("manual", manual_app)):
@@ -547,6 +548,48 @@ def sheet_cmd(product: str = typer.Option(...), since: int = typer.Option(7, min
         typer.echo(f"Reddit rows without a profile: {missing}. Author lookup (paid, Apify): "
                    f"{'ON' if ra.enabled else 'OFF'}, up to {ra.max_per_run} posts per run, "
                    f"next run about ${social.reddit_lookup_estimate(n):.2f}")
+
+
+LEAD_COLUMNS = ("company", "domain", "name", "title", "persona", "linkedin_url", "email", "email_class",
+                "status", "why_this_company")
+
+
+def leads_cmd(product: str = typer.Option(...)) -> None:
+    """The latest shortlist (companies, shown here) and every lead so far in leads.csv for YOU to open.
+    People's names and profiles go only to the file, never to the screen: this is safe in a Claude session."""
+    import csv
+    from gtm.paths import product_data_dir
+    from gtm.social import _cell
+    from gtm.util import sanitize_name
+    conn = store.open_state(product)
+    run = conn.execute("SELECT run_id FROM shortlist ORDER BY at DESC LIMIT 1").fetchone()
+    picked = conn.execute(
+        "SELECT s.domain, a.name, s.verdict, s.final, s.reason FROM shortlist s JOIN accounts a ON a.domain = s.domain "
+        "WHERE s.run_id = ? AND s.verdict = 'keep' ORDER BY s.final DESC", (run[0],)).fetchall() if run else []
+    why = {}
+    for r in conn.execute("SELECT domain, reason FROM shortlist WHERE verdict = 'keep' ORDER BY at"):
+        why[r["domain"]] = r["reason"]
+    rows = conn.execute(
+        "SELECT a.name AS company, l.account_domain AS domain, l.full_name, l.title, l.persona, l.linkedin_url, "
+        "l.email, l.email_class, l.status FROM leads l JOIN accounts a ON a.domain = l.account_domain "
+        "ORDER BY l.created_at DESC").fetchall()
+    path = product_data_dir(product) / "leads.csv"
+    with path.open("w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(LEAD_COLUMNS)
+        for r in rows:
+            w.writerow([_cell(v) for v in (r["company"], r["domain"], r["full_name"], r["title"], r["persona"],
+                                            r["linkedin_url"], r["email"], r["email_class"], r["status"],
+                                            why.get(r["domain"]))])
+    typer.echo(f"latest shortlist ({run[0] if run else 'none yet'}): {len(picked)} compan{'y' if len(picked) == 1 else 'ies'} kept")
+    for p in picked:
+        typer.echo(f"  {p['final'] or 0:5.1f}  {sanitize_name(p['name'])} ({p['domain']}): {sanitize_name(p['reason'], 200)}")
+    per = {}
+    for r in rows:
+        per[r["domain"]] = per.get(r["domain"], 0) + 1
+    typer.echo(f"\n{len(rows)} lead(s) at {len(per)} compan{'y' if len(per) == 1 else 'ies'}, "
+               f"{sum(1 for r in rows if r['email'])} with an email")
+    typer.echo(f"leads file: {path} (open it in Google Sheets or Excel; names and profiles are only in the file)")
 
 
 # ---------------------------------------------------------------- schedule / manual / forget
