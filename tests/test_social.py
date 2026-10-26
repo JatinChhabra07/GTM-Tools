@@ -314,3 +314,16 @@ def test_sheet_command_shows_the_lookup_estimate(world):
     _full_run()
     out = CliRunner().invoke(app, ["sheet", "--product", SLUG]).output
     assert "Reddit rows without a profile: 1" in out and "OFF" in out and "$0.01" in out
+
+
+def test_web_search_posts_need_a_recent_page_date(world, monkeypatch):
+    """Live 2026-10-26: 6-7 year old Quora questions reached the intent sheet because web-search
+    results carry no date and undated meant 'fresh'. Now the page's own date decides."""
+    monkeypatch.setitem(fake.PAGE_DATES, "https://www.quora.com/What-is-a-good-cart-recovery-tool", "2019-05-01")
+    items = [{"url": "https://www.quora.com/What-is-a-good-cart-recovery-tool", "posted_at": None},
+             {"url": "https://www.quora.com/undated-question", "posted_at": None},
+             {"url": "https://www.indiehackers.com/post/carts-xyz", "posted_at": None}]
+    kept = social.dated_fresh(items)
+    assert [i["url"] for i in kept] == ["https://www.indiehackers.com/post/carts-xyz"]
+    assert kept[0]["posted_at"]
+    assert not social._fresh_known(None) and not social._fresh_known("not a date")

@@ -290,6 +290,50 @@ def _relevant(text: str, kws: list[str]) -> bool:
     return any(len(words & t) >= min(2, len(t)) for t in map(_tokens, kws) if t)
 
 
+PAGE_DATE_LOOKUPS = 12  # free page-metadata reads per source per run
+
+
+def _fresh_known(posted: str | None) -> bool:
+    """A DATED post within STALE_DAYS. Unknown or unreadable dates are not current intent."""
+    if not posted:
+        return False
+    try:
+        return now() - parse_iso(str(posted)) <= timedelta(days=STALE_DAYS)
+    except (ValueError, TypeError):
+        return False
+
+
+def page_date(url: str) -> str | None:
+    """The page's own publish date from its metadata (meta tags / JSON-LD), via wigolo (free)."""
+    from gtm.sources import wigolo
+    data = (wigolo.call("extract", {"url": url, "mode": "metadata"}) or {}).get("data") or {}
+    if data.get("date") or data.get("published_time"):
+        return str(data.get("date") or data.get("published_time"))
+    for node in data.get("jsonld") or []:
+        if isinstance(node, dict) and (d := node.get("datePublished") or node.get("dateCreated")):
+            return str(d)
+    return None
+
+
+def dated_fresh(items: list[dict], limit: int = PAGE_DATE_LOOKUPS) -> list[dict]:
+    """Web-search results carry no date and the engines ignore the time filter (live check: a
+    2019 Quora question and a 2023 Reddit thread came back for 'last month'). Each item's date is
+    read from the page; only dated posts within STALE_DAYS are kept. Undated = dropped."""
+    out, looked = [], 0
+    for it in items:
+        if not it.get("posted_at"):
+            if looked >= limit:
+                continue
+            looked += 1
+            try:
+                it = {**it, "posted_at": page_date(it["url"])}
+            except Exception:
+                continue
+        if _fresh_known(it["posted_at"]):
+            out.append(it)
+    return out
+
+
 def fallback_items(key: str, res, kws: list[str]) -> list[dict]:
     """wigolo results -> anonymous post items: http(s) pages (not home pages) on the scoped domains
     whose title/snippet/URL words match a keyword. Q&A sites often block snippets but put the question
@@ -333,9 +377,13 @@ def collect_fallbacks(ctx) -> None:
         if isinstance(res, Exception):
             ctx.note(f"{LABELS[key]} search failed ({type(res).__name__})")
             continue
+        candidates = fallback_items(key, res, kws)
+        items = dated_fresh(candidates)
+        if len(items) < len(candidates):
+            ctx.count("posts_undated_or_old_skipped", len(candidates) - len(items))
         new = sum(store_post(ctx.conn, source=key, url=it["url"], text=it["text"], posted_at=it["posted_at"],
                              author_name=None, author_handle=None, author_title=None, company_page=False,
-                             keywords=kws, run_id=ctx.run_id) for it in fallback_items(key, res, kws))
+                             keywords=kws, run_id=ctx.run_id) for it in items)
         ctx.count(f"posts_{key}", new)
 
 
@@ -503,7 +551,7 @@ def source_test(slug: str, cfg: ProductConfig, conn, *, confirm: bool) -> dict:
         if isinstance(res, Exception):
             results[key].update(status="error", error=type(res).__name__)
         else:
-            found[key] = fallback_items(key, res, kws)
+            found[key] = dated_fresh(fallback_items(key, res, kws), limit=SAMPLE_PER_SOURCE * 2)
     allowed = sorted(obs.confirmed_codes(conn, "intent") & set(INTENT_CODES)) or \
         ["ASKS_FOR_SOLUTION", "COMPETITOR_PAIN", "SWITCHING"]
     sample = [it for s in SOCIAL_SOURCES for it in found[s][:SAMPLE_PER_SOURCE]]

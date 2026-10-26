@@ -1140,6 +1140,7 @@ Founder's bar after the test: **every run delivers 20-25 filtered high-intent le
 | Leads without LinkedIn or email | **harvestapi employees actor returns nobody without input `maxItems`** (logs "no limits"); team-page people have no profile | `maxItems` set, `?trk` stripped, current output shape (`currentPositions`, `_meta.query`) read, Short mode; one employees search over the whole shortlist fills site people's profiles; free strict name+company profile lookup; reachable people win ties |
 | 5 leads per run | cap fell back to 10; only 25-30 signal companies profiled/priced per run; jobs searched worldwide | `discovery.leads_per_run` = 25; 80 signal companies per run; jobs in the ICP's first two allowed countries (budget split across them) |
 | Founder couldn't see results | no lead view; data dir is hidden | `bin/gtm leads` + every run rewrites `leads.csv` (chosen people only, reachable first, with the buying signal and its link) |
+| 6-7 year old Quora questions in the intent sheet | web-search results carry no date, engines ignore the time filter, undated counted as fresh | fallback posts need a page date (meta/JSON-LD via wigolo, free) within 90 days; undated = dropped |
 | Flat 12-call reserve vs 25 leads | reserve didn't scale | `downstream_need(n)` per lead; quota lowered to what the run can check and write; qualify in rounds of 10, a lead a lens skipped waits for the next run |
 
 Open: verified emails need the Snov key; the Reddit author lookup stays off until the founder turns it on.

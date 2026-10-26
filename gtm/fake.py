@@ -395,7 +395,14 @@ def last30days(topic: str) -> dict:  # noqa: F811  (extends the fake above)
     return out
 
 
+# page metadata dates for the fallback posts (a page with no date here is dropped as undated)
+PAGE_DATES = {"https://www.quora.com/What-is-a-good-cart-recovery-tool": _recent(5),
+              "https://www.indiehackers.com/post/carts-xyz": _recent(3)}
+
+
 def wigolo(name: str, args: dict):  # noqa: F811
+    if name == "extract" and args.get("mode") == "metadata":
+        return {"data": {"date": PAGE_DATES.get(args.get("url"))}}
     if name == "search" and (args.get("include_domains") or args.get("exclude_domains")):
         return {"results": [r for d in args.get("include_domains") or [] for r in FORUM_RESULTS.get(d, [])]}
     return _wigolo_base(name, args)
