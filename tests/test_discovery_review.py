@@ -315,3 +315,14 @@ def test_every_run_refreshes_the_leads_file(world):
     assert path.read_text().startswith('"company","domain"')  # fully quoted
     report = (product_data_dir(SLUG) / "runs" / res["run_id"] / "report.md").read_text()
     assert "Leads file" in report and str(path) in report
+
+
+def test_profile_match_needs_the_whole_name_and_the_company():
+    from gtm.enrich import profile_match
+    hit = {"url": "https://in.linkedin.com/in/saahilgoel", "title": "Saahil Goel - CEO @ Shiprocket | LinkedIn"}
+    assert profile_match(hit, "Saahil Goel", "Shiprocket", "shiprocket.in") == hit["url"]
+    assert profile_match(hit, "Saahil Goel", "Nykaa", "nykaa.com") is None  # namesake elsewhere
+    assert profile_match(hit, "Saahil Kumar", "Shiprocket", "shiprocket.in") is None
+    post = {"url": "https://www.linkedin.com/posts/x_activity-1", "title": "Saahil Goel Shiprocket"}
+    assert profile_match(post, "Saahil Goel", "Shiprocket", "shiprocket.in") is None  # a post, not a profile
+    assert profile_match(hit, "Naaptol", "Naaptol", "naaptol.com") is None  # one-word "names" are not people

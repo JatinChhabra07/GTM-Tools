@@ -256,7 +256,56 @@ def run(ctx) -> None:
                 leads.append(g)
             else:
                 ctx.count("no_contact_found")
+    optional(ctx, "LinkedIn profile lookup", fill_profiles, ctx.conn, ctx)
     optional(ctx, "Snov email finding", find_emails, ctx, [lk for lk in leads if lk])
+
+
+_PROFILE_RE = re.compile(r"^https://(?:[a-z]{2,3}\.)?linkedin\.com/in/[A-Za-z0-9_%-]+/?$")
+_COMPANY_FILLER = {"the", "inc", "ltd", "llc", "pvt", "private", "limited", "group", "india", "co", "company",
+                   "technologies", "solutions", "services", "labs"}
+
+
+def _company_words(name: str | None, domain: str) -> set[str]:
+    words = {w for w in re.findall(r"[a-z0-9]+", (name or "").lower()) if len(w) > 2 and w not in _COMPANY_FILLER}
+    return words | {domain.split(".")[0].lower()}
+
+
+def profile_match(result: dict, full_name: str, company: str | None, domain: str) -> str | None:
+    """A search result is this person's profile only if it is a /in/ page whose title carries every
+    part of their name AND their company: a namesake elsewhere must not get the email."""
+    url = (result.get("url") or "").split("?")[0]
+    if not _PROFILE_RE.match(url):
+        return None
+    title = " ".join(re.findall(r"[a-z0-9]+", (result.get("title") or "").lower()))
+    text = title + " " + " ".join(re.findall(r"[a-z0-9]+", (result.get("snippet") or "").lower()))
+    name_parts = re.findall(r"[a-z]+", full_name.lower())
+    if len(name_parts) < 2 or not all(re.search(rf"\b{p}\b", title) for p in name_parts):
+        return None
+    return url if any(re.search(rf"\b{w}\b", text) for w in _company_words(company, domain)) else None
+
+
+def fill_profiles(conn: sqlite3.Connection, ctx=None, limit: int = 10) -> int:
+    """Free: a web search per lead that has no LinkedIn profile (team-page people, earlier runs)."""
+    from gtm.sources import wigolo
+    rows = conn.execute(
+        "SELECT l.lead_key, l.full_name, l.account_domain, a.name AS company FROM leads l "
+        "JOIN accounts a ON a.domain = l.account_domain WHERE l.linkedin_url IS NULL AND l.is_generic_inbox = 0 "
+        "AND l.status NOT IN ('dropped') ORDER BY l.created_at DESC LIMIT ?", (limit,)).fetchall()
+    found = 0
+    for r in rows:
+        try:
+            res = wigolo.search([f'"{r["full_name"]}" {r["company"] or r["account_domain"]} linkedin'],
+                                include_domains=["linkedin.com"], max_results=5)
+        except Exception:
+            continue
+        url = next((u for x in (res.get("results", []) if isinstance(res, dict) else [])
+                    if (u := profile_match(x, r["full_name"], r["company"], r["account_domain"]))), None)
+        if url and not conn.execute("SELECT 1 FROM leads WHERE linkedin_url = ?", (url,)).fetchone():
+            conn.execute("UPDATE leads SET linkedin_url = ? WHERE lead_key = ?", (url, r["lead_key"]))
+            found += 1
+    if ctx is not None:
+        ctx.count("linkedin_profiles_found", found)
+    return found
 
 
 def _upsert_lead(ctx, account, person: dict, persona, how: str) -> str:

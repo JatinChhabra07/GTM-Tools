@@ -550,7 +550,8 @@ def sheet_cmd(product: str = typer.Option(...), since: int = typer.Option(7, min
                    f"next run about ${social.reddit_lookup_estimate(n):.2f}")
 
 
-def leads_cmd(product: str = typer.Option(...)) -> None:
+def leads_cmd(product: str = typer.Option(...),
+              find_profiles: bool = typer.Option(False, help="free web search for leads with no LinkedIn profile")) -> None:
     """The latest shortlist (companies, shown here) and every lead so far in leads.csv for YOU to open.
     People's names and profiles go only to the file, never to the screen: this is safe in a Claude session."""
     from gtm.report import write_leads_csv
@@ -560,6 +561,11 @@ def leads_cmd(product: str = typer.Option(...)) -> None:
     picked = conn.execute(
         "SELECT s.domain, a.name, s.verdict, s.final, s.reason FROM shortlist s JOIN accounts a ON a.domain = s.domain "
         "WHERE s.run_id = ? AND s.verdict = 'keep' ORDER BY s.final DESC", (run[0],)).fetchall() if run else []
+    if find_profiles:
+        from gtm import enrich
+        from gtm.run import product_lock
+        with product_lock(product):
+            typer.echo(f"LinkedIn profiles found: {enrich.fill_profiles(conn, limit=50)}")
     path, rows = write_leads_csv(conn, product)
     typer.echo(f"latest shortlist ({run[0] if run else 'none yet'}): {len(picked)} compan{'y' if len(picked) == 1 else 'ies'} kept")
     for p in picked:
