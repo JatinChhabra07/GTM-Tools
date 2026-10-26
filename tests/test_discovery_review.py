@@ -303,3 +303,15 @@ def test_a_site_lead_found_again_with_a_profile_is_updated_not_duplicated(world)
     assert first == again == lead_key(SLUG, linkedin_url=None, name="Pat Lee", domain="brandly.example")
     rows = conn.execute("SELECT linkedin_url FROM leads WHERE full_name = 'Pat Lee'").fetchall()
     assert [r[0] for r in rows] == ["https://www.linkedin.com/in/patlee"]
+
+
+def test_every_run_refreshes_the_leads_file(world):
+    import csv
+    from gtm.paths import product_data_dir
+    res = run.execute(SLUG, "full", limit=5)
+    path = product_data_dir(SLUG) / "leads.csv"
+    rows = list(csv.DictReader(path.open()))
+    assert rows and all(r["company"] and r["domain"] for r in rows)
+    assert path.read_text().startswith('"company","domain"')  # fully quoted
+    report = (product_data_dir(SLUG) / "runs" / res["run_id"] / "report.md").read_text()
+    assert "Leads file" in report and str(path) in report

@@ -42,6 +42,33 @@ def funnel(conn: sqlite3.Connection, since: str | None = None) -> dict:
     }
 
 
+LEAD_COLUMNS = ("company", "domain", "name", "title", "persona", "linkedin_url", "email", "email_class",
+                "status", "why_this_company")
+
+
+def write_leads_csv(conn: sqlite3.Connection, slug: str):
+    """Every lead so far -> <data>/<slug>/leads.csv for the founder to open. Names and profiles live
+    only in this file, never in a report or on screen. Returns (path, rows)."""
+    import csv
+    from gtm.paths import product_data_dir
+    from gtm.social import _cell
+    why = {r["domain"]: r["reason"] for r in conn.execute(
+        "SELECT domain, reason FROM shortlist WHERE verdict = 'keep' ORDER BY at")}
+    rows = conn.execute(
+        "SELECT a.name AS company, l.account_domain AS domain, l.full_name, l.title, l.persona, l.linkedin_url, "
+        "l.email, l.email_class, l.status FROM leads l JOIN accounts a ON a.domain = l.account_domain "
+        "ORDER BY l.created_at DESC").fetchall()
+    path = product_data_dir(slug) / "leads.csv"
+    with path.open("w", newline="") as f:
+        w = csv.writer(f, quoting=csv.QUOTE_ALL)  # quoted: a spreadsheet keeps "Shubham Sharma" in one cell
+        w.writerow(LEAD_COLUMNS)
+        for r in rows:
+            w.writerow([_cell(v) for v in (r["company"], r["domain"], r["full_name"], r["title"], r["persona"],
+                                            r["linkedin_url"], r["email"], r["email_class"], r["status"],
+                                            why.get(r["domain"]))])
+    return path, rows
+
+
 def write_run_report(ctx, status: str, reason: str | None) -> None:
     usage = ctx.conn.execute("SELECT prompt_id, count(*) n, sum(coalesce(input_tokens,0)) i, sum(coalesce(output_tokens,0)) o, "
                              "sum(outcome != 'ok') bad FROM usage_events WHERE run_id = ? GROUP BY prompt_id",
@@ -81,6 +108,12 @@ def write_run_report(ctx, status: str, reason: str | None) -> None:
         from gtm.social import sheet_path
         lines += [f"**{ctx.counts['intent_sheet_rows']} new row(s) in the intent sheet** (anonymous intent posts for "
                   f"manual follow-up; nobody on it is emailed): {sheet_path(ctx.slug)}", ""]
+    try:
+        path, rows = write_leads_csv(ctx.conn, ctx.slug)
+        lines += [f"**Leads file** ({len(rows)} lead(s), {sum(1 for r in rows if r['linkedin_url'])} with a LinkedIn "
+                  f"profile, {sum(1 for r in rows if r['email'])} with an email): {path}", ""]
+    except OSError as e:  # the report must still be written
+        ctx.note(f"leads.csv not written: {e}")
     lines += engine_lines(ctx.conn, ctx.ledger, ctx.slug)
     if ctx.notes:
         lines += ["## Notes", "", *(f"- {sanitize_name(n, 200)}" for n in ctx.notes), ""]
