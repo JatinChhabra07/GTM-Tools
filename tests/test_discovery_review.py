@@ -311,7 +311,8 @@ def test_every_run_refreshes_the_leads_file(world):
     res = run.execute(SLUG, "full", limit=5)
     path = product_data_dir(SLUG) / "leads.csv"
     rows = list(csv.DictReader(path.open()))
-    assert rows and all(r["company"] and r["domain"] for r in rows)
+    assert rows and all(r["company"] and r["domain"] and r["persona"] for r in rows)
+    assert all(r["reachable_by"] for r in rows) and any(r["signal"] and r["signal_url"].startswith("http") for r in rows)
     assert path.read_text().startswith('"company","domain"')  # fully quoted
     report = (product_data_dir(SLUG) / "runs" / res["run_id"] / "report.md").read_text()
     assert "Leads file" in report and str(path) in report

@@ -43,12 +43,25 @@ def funnel(conn: sqlite3.Connection, since: str | None = None) -> dict:
 
 
 LEAD_COLUMNS = ("company", "domain", "name", "title", "persona", "linkedin_url", "email", "email_class",
-                "status", "why_this_company")
+                "reachable_by", "signal", "signal_url", "why_this_company", "status")
+
+
+def _why_now(conn: sqlite3.Connection, domain: str) -> tuple[str, str]:
+    """The strongest fresh buying signal at the company: intent before trigger, then signal rank."""
+    from gtm import observations as obs
+    fresh = sorted((o for o in obs.latest(conn, domain, kinds=("intent", "trigger")) if o.fresh),
+                   key=lambda o: (o.kind != "intent", o.rank))
+    if not fresh:
+        return "", ""
+    o = fresh[0]
+    return (f"{o.signal_code}: {sanitize_name(o.value_text, 120)}" if o.value_text else o.signal_code), o.evidence_url
 
 
 def write_leads_csv(conn: sqlite3.Connection, slug: str):
-    """Every lead so far -> <data>/<slug>/leads.csv for the founder to open. Names and profiles live
-    only in this file, never in a report or on screen. Returns (path, rows)."""
+    """The people the pipeline CHOSE (a persona match, or the company's own inbox) -> <data>/<slug>/leads.csv
+    for the founder to open, reachable leads first, each with why-now. Signal authors who aren't a
+    persona are not leads. Names and profiles live only in this file, never in a report or on screen.
+    Returns (path, rows)."""
     import csv
     from gtm.paths import product_data_dir
     from gtm.social import _cell
@@ -56,16 +69,20 @@ def write_leads_csv(conn: sqlite3.Connection, slug: str):
         "SELECT domain, reason FROM shortlist WHERE verdict = 'keep' ORDER BY at")}
     rows = conn.execute(
         "SELECT a.name AS company, l.account_domain AS domain, l.full_name, l.title, l.persona, l.linkedin_url, "
-        "l.email, l.email_class, l.status FROM leads l JOIN accounts a ON a.domain = l.account_domain "
-        "ORDER BY l.created_at DESC").fetchall()
+        "l.email, l.email_class, l.status, l.is_generic_inbox FROM leads l JOIN accounts a ON a.domain = l.account_domain "
+        "WHERE l.persona IS NOT NULL AND l.status != 'dropped' "
+        "ORDER BY (l.linkedin_url IS NULL AND l.email IS NULL), l.created_at DESC").fetchall()
     path = product_data_dir(slug) / "leads.csv"
     with path.open("w", newline="") as f:
         w = csv.writer(f, quoting=csv.QUOTE_ALL)  # quoted: a spreadsheet keeps "Shubham Sharma" in one cell
         w.writerow(LEAD_COLUMNS)
         for r in rows:
+            reach = " + ".join(x for x, ok in (("LinkedIn", r["linkedin_url"]),
+                                              ("company inbox" if r["is_generic_inbox"] else "email", r["email"])) if ok)
+            signal, signal_url = _why_now(conn, r["domain"])
             w.writerow([_cell(v) for v in (r["company"], r["domain"], r["full_name"], r["title"], r["persona"],
-                                            r["linkedin_url"], r["email"], r["email_class"], r["status"],
-                                            why.get(r["domain"]))])
+                                            r["linkedin_url"], r["email"], r["email_class"], reach or "not yet",
+                                            signal, signal_url, why.get(r["domain"]), r["status"])])
     return path, rows
 
 
