@@ -210,3 +210,33 @@ def test_reviewer_findings_reach_both_synths_only_as_untrusted(world, monkeypatc
     assert set(seen) == {"shortlist_synth", "qualify_synth"}
     for payload, blocks in seen.values():
         assert "findings" not in payload and "reviewer_findings" in blocks
+
+
+def test_subdomains_fold_into_one_company_and_icp_queries_cover_every_segment():
+    from gtm.util import registrable_domain
+    assert registrable_domain("https://m.snapdeal.com/x") == "snapdeal.com"
+    assert registrable_domain("ondcstore.snapdeal.com") == "snapdeal.com"
+    assert registrable_domain("shop.acme.co.in") == "acme.co.in"
+    assert registrable_domain("www.sairamce.edu.in") == "sairamce.edu.in"
+    assert registrable_domain("acme.io") == "acme.io"
+
+    from gtm import accounts
+    segs = [{"name": f"s{i}", "industries": [f"ind{i}a", f"ind{i}b", f"ind{i}c"], "geos": ["IN", "US"]}
+            for i in range(4)]
+    cfg = SimpleNamespace(icp=SimpleNamespace(segments=[SimpleNamespace(tech_stack_any=[], **s) for s in segs]))
+    qs = accounts.icp_queries(cfg)
+    assert len(qs) == 12
+    assert all(any(f"ind{i}" in q for q in qs) for i in range(4)), qs
+
+
+def test_rescore_drops_a_subdomain_of_a_known_company(world):
+    from gtm import accounts
+    conn = store.open_state(SLUG)
+    accounts.ensure_account(conn, domain="m.brandly.example", name="Brandly mobile", source="tal",
+                            evidence="https://m.brandly.example/")
+    conn.execute("INSERT OR IGNORE INTO accounts (domain, name, source, resolution_evidence, status, created_at) "
+                 "VALUES ('brandly.example','Brandly','tal','https://brandly.example/','new',?)",
+                 (now().isoformat(),))
+    accounts.rescore_accounts(conn, config.load(SLUG))
+    assert conn.execute("SELECT status FROM accounts WHERE domain='m.brandly.example'").fetchone()[0] == "dropped"
+    assert conn.execute("SELECT status FROM accounts WHERE domain='brandly.example'").fetchone()[0] != "dropped"

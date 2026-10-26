@@ -12,6 +12,7 @@ import os
 import re
 import sqlite3
 from dataclasses import dataclass
+from itertools import zip_longest
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -21,7 +22,7 @@ from gtm.config import ProductConfig
 from gtm.gates import country_code
 from gtm.paths import product_config_dir
 from gtm.score import client_prints, firmographics, lookalike, prescore
-from gtm.util import domain_of, looks_like_url, now_iso
+from gtm.util import domain_of, looks_like_url, now_iso, registrable_domain
 
 JUNK_DOMAINS = ("linkedin.com", "facebook.com", "instagram.com", "twitter.com", "x.com", "youtube.com",
                 "wikipedia.org", "crunchbase.com", "g2.com", "capterra.com", "clutch.co", "glassdoor.com",
@@ -231,7 +232,12 @@ def rescore_accounts(conn: sqlite3.Connection, cfg: ProductConfig) -> dict:
     prints = client_prints(conn)
     n_clients = len(prints)
     out = {"scored": 0, "tier1": 0, "tier2": 0, "tier3": 0}
+    known = {r[0] for r in conn.execute("SELECT domain FROM accounts")}
     for a in conn.execute("SELECT * FROM accounts WHERE status NOT IN ('client','dropped')").fetchall():
+        parent = registrable_domain(a["domain"])
+        if parent != a["domain"] and parent in known:  # a subdomain of a company we already have
+            conn.execute("UPDATE accounts SET status = 'dropped' WHERE domain = ?", (a["domain"],))
+            continue
         f = firmographics(a, obs.latest(conn, a["domain"], kinds=("firmographic",)))
         look = lookalike(f, prints, exclude=a["domain"])
         ps = prescore(cfg, f, look, n_clients)
@@ -312,15 +318,20 @@ def calibrate(conn: sqlite3.Connection, cfg: ProductConfig) -> Calibration:
 # ---------------------------------------------------------------- TAL candidates (free: wigolo)
 
 def icp_queries(cfg: ProductConfig) -> list[str]:
-    names = {"IN": "India", "US": "United States", "GB": "UK", "AE": "UAE", "SG": "Singapore"}
-    out = []
+    names = {"IN": "India", "US": "United States", "GB": "UK", "AE": "UAE", "SG": "Singapore", "AU": "Australia",
+             "NG": "Nigeria"}
+    per_seg = []
     for seg in cfg.icp.segments:
         geos = [names.get(country_code(g) or g, g) for g in seg.geos] or [""]
+        qs = []
         for ind in seg.industries[:3] or [seg.name]:
             for geo in geos[:2]:
-                out.append(f"{ind} companies {geo}".strip())
+                qs.append(f"{ind} companies {geo}".strip())
                 for tech in seg.tech_stack_any[:2]:
-                    out.append(f"{ind} brands using {tech} {geo}".strip())
+                    qs.append(f"{ind} brands using {tech} {geo}".strip())
+        per_seg.append(qs)
+    # segments take turns, so the first segment can't use up every query slot
+    out = [q for turn in zip_longest(*per_seg) for q in turn if q]
     return list(dict.fromkeys(out))[:12]
 
 
@@ -390,7 +401,7 @@ def candidates_from_search(llm_session, cfg: ProductConfig, queries: list[str] |
                     lst["via"].setdefault(engine, detail)
             if not c.is_company_site:
                 continue
-            d = domain_of(c.url)  # the result's own host: the model can't invent a domain here
+            d = registrable_domain(c.url)  # the result's own host: the model can't invent a domain here
             if d and not is_junk(d):
                 name = c.name if c.name and not looks_like_url(c.name) else d
                 ev = evidence_for(c.url)

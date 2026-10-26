@@ -56,6 +56,16 @@ def domain_of(url_or_domain: str) -> str:
     return host[4:] if host.startswith("www.") else host
 
 
+_SLD = {"co", "com", "org", "net", "ac", "gov", "edu", "gen", "firm", "ind", "ltd", "plc", "nic", "res"}
+
+
+def registrable_domain(host: str) -> str:
+    """'m.snapdeal.com' -> 'snapdeal.com', 'shop.acme.co.in' -> 'acme.co.in': one company, one domain."""
+    labels = domain_of(host).split(".")
+    keep = 3 if len(labels) >= 3 and len(labels[-1]) == 2 and labels[-2] in _SLD else 2
+    return ".".join(labels[-keep:])
+
+
 def has_pii(text: str) -> bool:
     return bool(EMAIL_RE.search(text) or PHONE_RE.search(text))
 
