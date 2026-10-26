@@ -262,3 +262,44 @@ def test_shop_page_text_is_not_a_job_title():
     assert not _reads_like_title("Your Account", ROLE_WORD_RE)
     assert not _reads_like_title("Head and Shoulders", ROLE_WORD_RE)
     assert all(_reads_like_title(t, ROLE_WORD_RE) for t in ("Head of HR", "Sales Head", "Account Manager"))
+
+
+def test_site_people_get_their_linkedin_profile_and_reachable_people_win():
+    """Live VizitorApp run: leads came from team pages with no LinkedIn URL and no way to reach them."""
+    from gtm import enrich
+    site = [{"name": "Shubham Sharma", "title": "Cluster Manager Facilities", "linkedin_url": None, "country": None,
+             "evidence": "https://devx.work/team", "source": "site"}]
+    li = [{"name": "Shubham  SHARMA", "title": "Cluster Manager", "linkedin_url": "https://www.linkedin.com/in/ss",
+           "country": "IN", "evidence": "https://www.linkedin.com/in/ss", "source": "linkedin"},
+          {"name": "Asha Rao", "title": "Facilities Manager", "linkedin_url": "https://www.linkedin.com/in/ar",
+           "country": "IN", "evidence": "https://www.linkedin.com/in/ar", "source": "linkedin"}]
+    merged = enrich._with_profiles(site, li)
+    assert len(merged) == 2
+    assert merged[0]["linkedin_url"] == "https://www.linkedin.com/in/ss" and merged[0]["source"] == "site"
+    assert merged[0]["title"] == "Cluster Manager Facilities"  # the site's own title is kept
+
+    persona = SimpleNamespace(name="Facilities", titles=["Facilities Manager"], seniority="manager")
+    ctx = SimpleNamespace(cfg=SimpleNamespace(personas=[persona]))
+    unreachable = {"name": "Old Name", "title": "Facilities Manager", "linkedin_url": None}
+    picked, _, how = enrich._pick(ctx, [unreachable, merged[1]])
+    assert picked["name"] == "Asha Rao" and how == "exact"
+
+
+def test_a_site_lead_found_again_with_a_profile_is_updated_not_duplicated(world):
+    from gtm import enrich
+    from gtm.resolve import lead_key
+    from gtm import accounts
+    conn = store.open_state(SLUG)
+    accounts.ensure_account(conn, domain="brandly.example", name="Brandly", source="tal",
+                            evidence="https://brandly.example/")
+    acct = conn.execute("SELECT * FROM accounts WHERE domain = 'brandly.example'").fetchone()
+    persona = SimpleNamespace(name="Founder", seniority="c_level")
+    ctx = SimpleNamespace(conn=conn, slug=SLUG, run_id="t")
+    site = {"name": "Pat Lee", "title": "CEO", "linkedin_url": None, "evidence": "https://brandly.example/team",
+            "source": "site"}
+    first = enrich._upsert_lead(ctx, acct, site, persona, "exact")
+    again = enrich._upsert_lead(ctx, acct, {**site, "linkedin_url": "https://www.linkedin.com/in/patlee"},
+                                persona, "exact")
+    assert first == again == lead_key(SLUG, linkedin_url=None, name="Pat Lee", domain="brandly.example")
+    rows = conn.execute("SELECT linkedin_url FROM leads WHERE full_name = 'Pat Lee'").fetchall()
+    assert [r[0] for r in rows] == ["https://www.linkedin.com/in/patlee"]

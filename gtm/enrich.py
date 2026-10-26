@@ -1,7 +1,8 @@
 """Enrich (plan §5 Phase 5): the right person at each account, then a verified email.
 
 Before any paid call: pre-score, global ledger and account navigation. Then personas: the
-signal author or the site's team page first (free), Apify LinkedIn employees second. ONE primary
+signal author and the site's team page (free) plus one Apify LinkedIn employees search over every
+shortlisted company, which also gives site-found people their profile link. ONE primary
 contact per account. Emails: pattern-first candidate -> Snov verify; else Snov finder; else a
 generic inbox printed on their own site. Snov task hashes and the Apify run id are saved as
 step refs before waiting, so a killed run resumes without paying twice.
@@ -163,6 +164,24 @@ def _people_from_linkedin(ctx, accounts_rows: list[sqlite3.Row]) -> dict[str, li
     return out
 
 
+def _name_key(name: str | None) -> str:
+    return " ".join(re.findall(r"[a-z]+", (name or "").lower()))
+
+
+def _with_profiles(people: list[dict], from_linkedin: list[dict]) -> list[dict]:
+    """Site/author people + LinkedIn people, one entry per person: a same-name LinkedIn hit gives a
+    site person its profile link (and current title if the site had none)."""
+    by_name = {_name_key(p["name"]): p for p in from_linkedin if _name_key(p["name"])}
+    out = []
+    for p in people:
+        li = by_name.pop(_name_key(p["name"]), None)
+        if li and not p.get("linkedin_url"):
+            p = {**p, "linkedin_url": li["linkedin_url"], "title": p.get("title") or li["title"],
+                 "country": p.get("country") or li["country"]}
+        out.append(p)
+    return out + list(by_name.values())
+
+
 def _pick(ctx, people: list[dict]) -> tuple[dict, object, str] | None:
     order = {p.name: i for i, p in enumerate(ctx.cfg.personas)}
     best = None
@@ -170,7 +189,8 @@ def _pick(ctx, people: list[dict]) -> tuple[dict, object, str] | None:
     for person in people:
         m = match_persona(person["title"], ctx.cfg.personas)
         if m:
-            key = (order[m[0].name], 0 if m[1] == "exact" else 1)
+            # same persona and match quality: someone we can actually reach (a profile link) wins
+            key = (order[m[0].name], 0 if m[1] == "exact" else 1, 0 if person.get("linkedin_url") else 1)
             if best is None or key < best[0]:
                 best = (key, person, m[0], m[1])
         elif person["title"]:
@@ -181,7 +201,7 @@ def _pick(ctx, people: list[dict]) -> tuple[dict, object, str] | None:
         for person in unmatched:
             pname = llm.get(person["title"])
             if pname in by_name:
-                key = (order[pname], 2)
+                key = (order[pname], 2, 0 if person.get("linkedin_url") else 1)
                 if best is None or key < best[0]:
                     best = (key, person, by_name[pname], "llm")
     return (best[1], best[2], best[3]) if best else None
@@ -201,7 +221,7 @@ def run(ctx) -> None:
     ctx.count("enrich_accounts", len(accts))
     if not accts:
         return
-    need_linkedin = []
+    found: dict[str, list[dict]] = {}
     chosen: dict[str, tuple[dict, object, str]] = {}
     for a in accts:
         people = []
@@ -212,15 +232,19 @@ def run(ctx) -> None:
                            "country": author["country"], "evidence": author["linkedin_url"] or a["resolution_evidence"],
                            "source": "signal", "lead_key": author["lead_key"]})
         people += _people_on_site(ctx, a["domain"])
+        found[a["domain"]] = people
+    # one LinkedIn search over every shortlisted company: it finds people the site doesn't list, and
+    # gives the site's people a profile link (a team page has none, and outreach needs one)
+    linkedin = optional(ctx, "LinkedIn people search", _people_from_linkedin, ctx, accts) or {}
+    for a in accts:
+        people = _with_profiles(found[a["domain"]], linkedin.get(a["domain"], []))
         pick = _pick(ctx, people)
         if pick:
             chosen[a["domain"]] = pick
-        else:
-            need_linkedin.append(a)
-    for domain, people in (optional(ctx, "LinkedIn people search", _people_from_linkedin, ctx, need_linkedin) or {}).items():
-        pick = _pick(ctx, people)
-        if pick:
-            chosen[domain] = pick
+    missing = [a["domain"] for a in accts if not a["linkedin_url"]]
+    if missing:
+        ctx.note(f"no LinkedIn company page known for {len(missing)} shortlisted compan"
+                 f"{'y' if len(missing) == 1 else 'ies'}, so no profile search there: {', '.join(missing[:5])}")
     leads = []
     for a in accts:
         if a["domain"] in chosen:
@@ -238,11 +262,15 @@ def run(ctx) -> None:
 def _upsert_lead(ctx, account, person: dict, persona, how: str) -> str:
     lk = person.get("lead_key") or lead_key(ctx.slug, linkedin_url=person.get("linkedin_url"), name=person["name"],
                                             domain=account["domain"])
+    by_name = lead_key(ctx.slug, linkedin_url=None, name=person["name"], domain=account["domain"])
+    if lk != by_name and ctx.conn.execute("SELECT 1 FROM leads WHERE lead_key = ?", (by_name,)).fetchone():
+        lk = by_name  # found earlier without a profile: the same person, now with a profile link
     ctx.conn.execute(
         "INSERT INTO leads (lead_key, account_domain, full_name, first_name, title, persona, persona_match, seniority, "
         "linkedin_url, country, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(lead_key) DO UPDATE SET "
         "persona = excluded.persona, persona_match = excluded.persona_match, seniority = excluded.seniority, "
-        "title = COALESCE(leads.title, excluded.title), country = COALESCE(leads.country, excluded.country)",
+        "title = COALESCE(leads.title, excluded.title), country = COALESCE(leads.country, excluded.country), "
+        "linkedin_url = COALESCE(leads.linkedin_url, excluded.linkedin_url)",
         (lk, account["domain"], person["name"], person["name"].split(" ")[0], person.get("title"), persona.name, how,
          persona.seniority, person.get("linkedin_url"), person.get("country"), now_iso()))
     ev = person.get("evidence") or account["resolution_evidence"]

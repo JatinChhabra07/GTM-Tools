@@ -575,7 +575,7 @@ def leads_cmd(product: str = typer.Option(...)) -> None:
         "ORDER BY l.created_at DESC").fetchall()
     path = product_data_dir(product) / "leads.csv"
     with path.open("w", newline="") as f:
-        w = csv.writer(f)
+        w = csv.writer(f, quoting=csv.QUOTE_ALL)  # quoted: a spreadsheet keeps "Shubham Sharma" in one cell
         w.writerow(LEAD_COLUMNS)
         for r in rows:
             w.writerow([_cell(v) for v in (r["company"], r["domain"], r["full_name"], r["title"], r["persona"],
