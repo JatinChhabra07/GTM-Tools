@@ -71,6 +71,9 @@ def fact_sheet(ctx, lead: sqlite3.Row, account: sqlite3.Row, latest: list, dims:
     return "\n".join(lines)
 
 
+QUALIFY_BATCH = 10
+
+
 def run(ctx) -> None:
     rows = ctx.conn.execute(
         "SELECT * FROM leads WHERE status = 'enriched' AND email IS NOT NULL AND NOT EXISTS "
@@ -114,8 +117,19 @@ def run(ctx) -> None:
             _save(ctx, r, s, snapshot, "keep", None, holdout=True)
             ctx.count("kept_holdout")
 
-    if graph:
-        _graph(ctx, graph, sheets, snapshot, rub)
+    # rounds of QUALIFY_BATCH: reviewers skip items in one big round. Leads a round can't afford stay
+    # 'enriched' and are qualified next run.
+    lens_n = len(_lenses(ctx))
+    for i in range(0, len(graph), QUALIFY_BATCH):
+        if ctx.llm.remaining < lens_n + 3:
+            ctx.note(f"{len(graph) - i} lead(s) wait for the next run: the isolated-call budget is used up")
+            break
+        _graph(ctx, graph[i:i + QUALIFY_BATCH], sheets, snapshot, rub)
+
+
+def _lenses(ctx) -> dict[str, str]:
+    return (dict(LENSES) if ctx.cfg.usage.limits()["qualify_reviewers"] >= 4
+            else {name: " ".join(LENSES[x] for x in parts) for name, parts in MERGED.items()})
 
 
 def _graph(ctx, graph, sheets, snapshot, rub) -> None:
@@ -131,8 +145,7 @@ def _graph(ctx, graph, sheets, snapshot, rub) -> None:
             findings[w.lead_key].append({"from": "worker", "verdict": "lower" if w.penalty else "ok",
                                          "penalty": w.penalty, "reason": "; ".join(w.concerns)[:300]})
 
-    lenses = (dict(LENSES) if ctx.cfg.usage.limits()["qualify_reviewers"] >= 4
-              else {name: " ".join(LENSES[x] for x in parts) for name, parts in MERGED.items()})
+    lenses = _lenses(ctx)
 
     def review(item):
         name, question = item
@@ -141,9 +154,11 @@ def _graph(ctx, graph, sheets, snapshot, rub) -> None:
 
     with ThreadPoolExecutor(max_workers=len(lenses)) as pool:
         reviews = list(pool.map(review, lenses.items()))
+    covered: dict[str, set] = {lk: set() for lk in keys}
     for name, out in reviews:
         for f in (out.findings if out else []):
             if f.lead_key in findings:
+                covered[f.lead_key].add(name)
                 findings[f.lead_key].append({"from": name, "verdict": f.verdict, "penalty": f.penalty,
                                              "reason": f.reason[:300]})
     if any(out is None for _, out in reviews):
@@ -166,6 +181,10 @@ def _graph(ctx, graph, sheets, snapshot, rub) -> None:
     for r, total in graph:
         lk = r["lead_key"]
         v = verdicts.get(lk)
+        if all(out is not None for _, out in reviews) and covered[lk] != set(lenses):
+            # every lens answered but one skipped this lead: not judged, so it waits for the next run
+            ctx.count("qualify_unreviewed")
+            continue
         reviewed = sum(1 for _, out in reviews if out is not None)
         if v is None or v.verdict == "needs_rework" or reviewed == 0:
             _save(ctx, r, total, snapshot, "drop", "unconverged", False, findings[lk])

@@ -59,9 +59,21 @@ def domain_of(url_or_domain: str) -> str:
 _SLD = {"co", "com", "org", "net", "ac", "gov", "edu", "gen", "firm", "ind", "ltd", "plc", "nic", "res"}
 
 
+# hosts where every subdomain is a different customer: 'acme.myshopify.com' is Acme, not Shopify
+SHARED_HOSTS = ("myshopify.com", "wixsite.com", "github.io", "vercel.app", "netlify.app", "blogspot.com",
+                "wordpress.com", "webflow.io", "squarespace.com", "herokuapp.com", "pages.dev", "notion.site",
+                "carrd.co", "framer.website", "business.site", "web.app", "firebaseapp.com", "azurewebsites.net",
+                "onrender.com", "substack.com", "medium.com", "weebly.com", "godaddysites.com", "zohosites.in")
+
+
 def registrable_domain(host: str) -> str:
-    """'m.snapdeal.com' -> 'snapdeal.com', 'shop.acme.co.in' -> 'acme.co.in': one company, one domain."""
-    labels = domain_of(host).split(".")
+    """'m.snapdeal.com' -> 'snapdeal.com', 'shop.acme.co.in' -> 'acme.co.in': one company, one domain.
+    On a shared host the customer's own label stays: 'x.acme.myshopify.com' -> 'acme.myshopify.com'."""
+    d = domain_of(host)
+    labels = d.split(".")
+    for shared in SHARED_HOSTS:
+        if d.endswith("." + shared):
+            return ".".join(labels[-(shared.count(".") + 2):])
     keep = 3 if len(labels) >= 3 and len(labels[-1]) == 2 and labels[-2] in _SLD else 2
     return ".".join(labels[-keep:])
 

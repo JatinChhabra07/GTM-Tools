@@ -141,13 +141,26 @@ def test_old_anonymous_posts_are_pruned_with_what_cites_them(world):
 
 def test_shortlist_keeps_calls_for_checking_and_writing(world, monkeypatch):
     from gtm import config as cfgmod
-    monkeypatch.setitem(cfgmod.USAGE_PROFILES, "max5x", {**cfgmod.USAGE_PROFILES["max5x"], "llm_calls_per_run": 14})
+    from gtm import shortlist
+    # too few calls to check and write even one lead: nothing is paid for
+    monkeypatch.setitem(cfgmod.USAGE_PROFILES, "max5x", {**cfgmod.USAGE_PROFILES["max5x"], "llm_calls_per_run": 6})
     fake.FakeApify.started.clear()
     res = run.execute(SLUG, "full", limit=5)
     conn = store.open_state(SLUG)
     assert not conn.execute("SELECT 1 FROM leads WHERE enriched_at IS NOT NULL").fetchone()
     assert not [k for k, _ in fake.FakeApify.started if k in ("employees", "people")]
     assert any("nothing paid" in n for n in res["notes"]), res["notes"]
+    # the reserve grows with the leads paid for: 25 leads need far more than the old flat 12
+    ctx = SimpleNamespace(cfg=config.load(SLUG))
+    assert shortlist.downstream_need(ctx, 25) >= 25 + 3 * (len(shortlist.lenses(ctx)) + 3)
+
+
+def test_tight_call_budget_lowers_the_lead_quota(world, monkeypatch):
+    from gtm import config as cfgmod
+    monkeypatch.setitem(cfgmod.USAGE_PROFILES, "max5x", {**cfgmod.USAGE_PROFILES["max5x"], "llm_calls_per_run": 16})
+    res = run.execute(SLUG, "full", limit=25)
+    assert any("lead quota lowered" in n for n in res["notes"]), res["notes"]
+    assert res["counts"]["llm_calls"] <= 16
 
 def test_shortlist_needs_every_lens(world, monkeypatch):
     real = fake.llm_response
@@ -362,3 +375,62 @@ def test_employees_actor_gets_a_limit_and_its_current_output_is_read():
     assert out == {"acme.in": [{"name": "Asha Rao", "title": "Facilities Manager",
                                 "linkedin_url": "https://www.linkedin.com/in/ACwAA1", "country": "IN",
                                 "evidence": "https://www.linkedin.com/in/ACwAA1", "source": "linkedin"}]}
+
+
+def test_review_round_two_fixes():
+    """Second independent review (2026-10-26): shared hosts, namesakes, lead keys."""
+    from gtm.util import registrable_domain
+    assert registrable_domain("acme.myshopify.com") == "acme.myshopify.com"
+    assert registrable_domain("shop.acme.myshopify.com") == "acme.myshopify.com"
+    assert registrable_domain("x.github.io") == "x.github.io"
+
+    from gtm.enrich import profile_match
+    other = {"url": "https://www.linkedin.com/in/rahul-s", "title": "Rahul Sharma - Manager at Globex.com | LinkedIn"}
+    assert profile_match(other, "Rahul Sharma", "acme.com", "acme.com") is None  # 'com' is not a company word
+    mine = {"url": "https://www.linkedin.com/in/rahul-s2", "title": "Rahul Sharma - Admin Head - Acme | LinkedIn"}
+    assert profile_match(mine, "Rahul Sharma", "acme.com", "acme.com") == mine["url"]
+
+
+def test_subdomain_rule_spares_near_misses_and_shared_hosts(world):
+    from gtm import accounts
+    conn = store.open_state(SLUG)
+    for d, status in (("acme.example", "new"), ("shop.acme.example", "near_miss"), ("myshopify.com", "new"),
+                      ("brand.myshopify.com", "new")):
+        conn.execute("INSERT INTO accounts (domain, name, source, resolution_evidence, status, created_at) "
+                     "VALUES (?,?,'tal',?,?,?)", (d, d, f"https://{d}/", status, now().isoformat()))
+    accounts.rescore_accounts(conn, config.load(SLUG))
+    st = dict(conn.execute("SELECT domain, status FROM accounts WHERE domain LIKE '%acme%' OR domain LIKE '%shopify%'"))
+    assert st["shop.acme.example"] == "near_miss" and st["brand.myshopify.com"] != "dropped"
+
+
+def test_signal_author_keeps_its_own_lead_row(world):
+    from gtm import accounts, enrich
+    from gtm.resolve import lead_key
+    conn = store.open_state(SLUG)
+    accounts.ensure_account(conn, domain="brandly.example", name="Brandly", source="tal",
+                            evidence="https://brandly.example/")
+    acct = conn.execute("SELECT * FROM accounts WHERE domain = 'brandly.example'").fetchone()
+    ctx = SimpleNamespace(conn=conn, slug=SLUG, run_id="t")
+    persona = SimpleNamespace(name="Founder", seniority="c_level")
+    site = {"name": "Pat Lee", "title": "CEO", "linkedin_url": None, "evidence": "https://brandly.example/team",
+            "source": "site"}
+    enrich._upsert_lead(ctx, acct, site, persona, "exact")  # the site row exists
+    author_key = lead_key(SLUG, linkedin_url="https://www.linkedin.com/in/patlee", name="Pat Lee",
+                          domain="brandly.example")
+    got = enrich._upsert_lead(ctx, acct, {**site, "linkedin_url": "https://www.linkedin.com/in/patlee",
+                                          "lead_key": author_key, "source": "signal"}, persona, "exact")
+    assert got == author_key
+
+
+def test_qualify_leaves_a_lead_a_lens_skipped_for_the_next_run(world, monkeypatch):
+    def skip_one(pid, payload, blocks, real):
+        out = real(pid, payload, blocks)
+        if pid == "qualify_review" and out.get("findings"):
+            out["findings"] = out["findings"][1:]  # every lens skips the first lead
+        return out
+    real = fake.llm_response
+    monkeypatch.setattr(fake, "llm_response", lambda pid, payload, blocks: skip_one(pid, payload, blocks, real))
+    res = run.execute(SLUG, "full", limit=5)
+    assert res["counts"].get("qualify_unreviewed", 0) >= 1, res["counts"]
+    conn = store.open_state(SLUG)
+    assert conn.execute("SELECT count(*) FROM leads WHERE status = 'enriched'").fetchone()[0] >= 1

@@ -169,11 +169,14 @@ def _jobs(ctx) -> None:
     from gtm.sources import apify
     client = apify.client()
     step = "collect"
-    per_kw = max(10, min(ctx.cfg.budgets.max_items_per_actor // max(1, len(keywords)), 50))
     # jobs in the ICP's first two countries: a worldwide search fills the pool with companies we can't email
-    for kw, where in [(k, g) for k in keywords[:5] for g in job_locations(ctx.cfg)]:
+    pairs = [(k, g) for k in keywords[:5] for g in job_locations(ctx.cfg)]
+    per_kw = max(10, min(ctx.cfg.budgets.max_items_per_actor // max(1, len(pairs)), 50))
+    for kw, where in pairs:
         ref_key = f"jobs:{kw}" + (f"@{where}" if where else "")
-        run_id = ctx.get_ref(step).get(ref_key)
+        refs = ctx.get_ref(step)
+        run_id = refs.get(ref_key) or (refs.get(f"jobs:{kw}") if (kw, where) == next(p for p in pairs if p[0] == kw)
+                                       else None)  # a run started before locations existed
         if not run_id:
             est = apify.estimate("jobs", per_kw)
             cap = ctx.budget.reserve_apify(est, f"jobs '{kw}' {where}".strip())

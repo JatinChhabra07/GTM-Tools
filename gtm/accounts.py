@@ -238,7 +238,11 @@ def rescore_accounts(conn: sqlite3.Connection, cfg: ProductConfig) -> dict:
     known = {r[0] for r in conn.execute("SELECT domain FROM accounts")}
     for a in conn.execute("SELECT * FROM accounts WHERE status NOT IN ('client','dropped')").fetchall():
         parent = registrable_domain(a["domain"])
-        if parent != a["domain"] and parent in known:  # a subdomain of a company we already have
+        if (parent != a["domain"] and parent in known and a["status"] in ("new", "prequalified", "below_cutoff")
+                and not conn.execute("SELECT 1 FROM leads WHERE account_domain = ? AND status != 'new'",
+                                     (a["domain"],)).fetchone()):
+            # a subdomain of a company we already have (m.snapdeal.com next to snapdeal.com); near-misses
+            # and accounts with leads in flight are never touched
             conn.execute("UPDATE accounts SET status = 'dropped' WHERE domain = ?", (a["domain"],))
             continue
         f = firmographics(a, obs.latest(conn, a["domain"], kinds=("firmographic",)))

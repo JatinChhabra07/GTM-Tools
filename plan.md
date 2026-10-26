@@ -1123,3 +1123,23 @@ panel.
   because the reviewers wrote them after reading scraped data. Live re-check: the real model gave
   the same correct verdicts in 4 calls (keep the D2C store; drop the reseller and the injected
   account). 383 tests.
+
+### 15.7 First live product test: VizitorApp (2026-10-26), fixes with regression tests
+
+Real keys (Apify only, no Snov), real model, product https://www.vizitorapp.com. Spend ~$1.2 Apify in total.
+Founder's bar after the test: **every run delivers 20-25 filtered high-intent leads, each reachable
+(LinkedIn profile or email)**. Found and fixed:
+
+| Live symptom | Cause | Fix |
+|---|---|---|
+| Nigerian leads would be dropped | "Nigeria"/Lagos/Abuja unknown to `country_code` | added (+ more UAE/AU cities) |
+| TAL = software agencies + `m.snapdeal.com` next to the snapdeal.com client | 12-query cap spent on 2 segments; subdomains not folded | queries round-robin segments; `registrable_domain` (shared hosts like myshopify.com kept per shop); unused subdomain accounts dropped |
+| Rebuild found 2 companies | a 3-query wigolo search returns results for the first query only | one search per query, lists rotate by query, plan-sized call cap (12/24), malformed domains refused |
+| Panel dropped companies "in doubt" | findings echoed as `www.x` silently lost; one 23-company round made lenses skip | loose domain match; panel in rounds of 20 until the quota is met; a company not covered by EVERY lens is `not_picked` (no cooldown) |
+| "Your Account", "Head and Shoulders" as job titles | bare `account`/`head` role words | `head` only as "Head of"/"X Head", `account` removed |
+| Leads without LinkedIn or email | **harvestapi employees actor returns nobody without input `maxItems`** (logs "no limits"); team-page people have no profile | `maxItems` set, `?trk` stripped, current output shape (`currentPositions`, `_meta.query`) read, Short mode; one employees search over the whole shortlist fills site people's profiles; free strict name+company profile lookup; reachable people win ties |
+| 5 leads per run | cap fell back to 10; only 25-30 signal companies profiled/priced per run; jobs searched worldwide | `discovery.leads_per_run` = 25; 80 signal companies per run; jobs in the ICP's first two allowed countries (budget split across them) |
+| Founder couldn't see results | no lead view; data dir is hidden | `bin/gtm leads` + every run rewrites `leads.csv` (chosen people only, reachable first, with the buying signal and its link) |
+| Flat 12-call reserve vs 25 leads | reserve didn't scale | `downstream_need(n)` per lead; quota lowered to what the run can check and write; qualify in rounds of 10, a lead a lens skipped waits for the next run |
+
+Open: verified emails need the Snov key; the Reddit author lookup stays off until the founder turns it on.

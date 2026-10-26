@@ -424,7 +424,7 @@ def accounts_build(product: str = typer.Option(...), estimate: bool = typer.Opti
         # the paid part covers every target account still without LinkedIn data, not just this call's new ones
         pending = [r[0] for r in conn.execute(
             "SELECT domain FROM accounts WHERE source = 'tal' AND status IN ('new','prequalified','below_cutoff') "
-            "AND linkedin_company_checked_at IS NULL ORDER BY created_at LIMIT ?", (max(max_new, 60),))]
+            "AND linkedin_company_checked_at IS NULL ORDER BY created_at LIMIT ?", (max_new or 60,))]  # 0 = only buy
         cost = apify.estimate("company", len(pending))
         out.update(without_linkedin_data=len(pending), linkedin_data_estimate_usd=cost)
         if confirm and pending:
@@ -552,7 +552,7 @@ def sheet_cmd(product: str = typer.Option(...), since: int = typer.Option(7, min
 
 def leads_cmd(product: str = typer.Option(...),
               find_profiles: bool = typer.Option(False, help="free web search for leads with no LinkedIn profile")) -> None:
-    """The latest shortlist (companies, shown here) and every lead so far in leads.csv for YOU to open.
+    """The latest shortlist (companies and scores, shown here) and every lead in leads.csv for YOU to open.
     People's names and profiles go only to the file, never to the screen: this is safe in a Claude session."""
     from gtm.report import write_leads_csv
     from gtm.util import sanitize_name
@@ -569,7 +569,8 @@ def leads_cmd(product: str = typer.Option(...),
     path, rows = write_leads_csv(conn, product)
     typer.echo(f"latest shortlist ({run[0] if run else 'none yet'}): {len(picked)} compan{'y' if len(picked) == 1 else 'ies'} kept")
     for p in picked:
-        typer.echo(f"  {p['final'] or 0:5.1f}  {sanitize_name(p['name'])} ({p['domain']}): {sanitize_name(p['reason'], 200)}")
+        # the panel's reason is free model text that can name people: it goes to leads.csv, not the screen
+        typer.echo(f"  {p['final'] or 0:5.1f}  {sanitize_name(p['name'])} ({p['domain']})")
     per = {}
     for r in rows:
         per[r["domain"]] = per.get(r["domain"], 0) + 1

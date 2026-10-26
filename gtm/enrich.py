@@ -15,6 +15,7 @@ import sqlite3
 
 from gtm import email_finder, gates, ledger
 from gtm.gates import country_code
+from gtm.util import registrable_domain
 from gtm import observations as obs
 from gtm.resolve import lead_key
 from gtm.schemas import PersonaMatches
@@ -269,12 +270,18 @@ def run(ctx) -> None:
 
 _PROFILE_RE = re.compile(r"^https://(?:[a-z]{2,3}\.)?linkedin\.com/in/[A-Za-z0-9_%-]+/?$")
 _COMPANY_FILLER = {"the", "inc", "ltd", "llc", "pvt", "private", "limited", "group", "india", "co", "company",
-                   "technologies", "solutions", "services", "labs"}
+                   "technologies", "technology", "tech", "solutions", "services", "labs", "digital", "media",
+                   "global", "international", "software", "systems", "consulting", "ventures", "enterprises",
+                   "industries", "network", "networks", "online", "health", "care", "hospital", "work", "works",
+                   # domain endings, when the account name is still its domain
+                   "com", "net", "org", "app", "dev", "www", "info", "biz", "xyz"}
 
 
 def _company_words(name: str | None, domain: str) -> set[str]:
+    """Distinctive words of the company: its domain's own label plus non-generic words of its name."""
+    stem = registrable_domain(domain).split(".")[0].lower()
     words = {w for w in re.findall(r"[a-z0-9]+", (name or "").lower()) if len(w) > 2 and w not in _COMPANY_FILLER}
-    return words | {domain.split(".")[0].lower()}
+    return words | ({stem} if len(stem) > 2 and stem not in _COMPANY_FILLER else set())
 
 
 def profile_match(result: dict, full_name: str, company: str | None, domain: str) -> str | None:
@@ -319,7 +326,8 @@ def _upsert_lead(ctx, account, person: dict, persona, how: str) -> str:
     lk = person.get("lead_key") or lead_key(ctx.slug, linkedin_url=person.get("linkedin_url"), name=person["name"],
                                             domain=account["domain"])
     by_name = lead_key(ctx.slug, linkedin_url=None, name=person["name"], domain=account["domain"])
-    if lk != by_name and ctx.conn.execute("SELECT 1 FROM leads WHERE lead_key = ?", (by_name,)).fetchone():
+    if (not person.get("lead_key") and lk != by_name
+            and ctx.conn.execute("SELECT 1 FROM leads WHERE lead_key = ?", (by_name,)).fetchone()):
         lk = by_name  # found earlier without a profile: the same person, now with a profile link
     ctx.conn.execute(
         "INSERT INTO leads (lead_key, account_domain, full_name, first_name, title, persona, persona_match, seniority, "

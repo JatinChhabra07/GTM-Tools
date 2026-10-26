@@ -27,9 +27,19 @@ LENSES = {
     "risk": "Risk: competitor, existing client, vendor, reseller, compliance risk, or a company we "
             "could only reach with a reference that would feel creepy.",
 }
-# calls kept for qualify + write after the panel: never pay for leads this run can't check and write
-DOWNSTREAM_RESERVE = 12
 PANEL_BATCH = 20
+
+
+def downstream_need(ctx, n_leads: int) -> int:
+    """Isolated calls to qualify and write n paid-for leads this run: never pay for leads this run
+    can't check and write. Qualify runs in rounds of QUALIFY_BATCH (worker + lenses + synth + recheck),
+    writing takes one call per lead, two with the humanize pass."""
+    from gtm.qualify import QUALIFY_BATCH
+    from gtm.writer import _humanize_on
+    if n_leads <= 0:
+        return 0
+    rounds = -(-n_leads // QUALIFY_BATCH)
+    return rounds * (len(lenses(ctx)) + 3) + n_leads * (2 if _humanize_on(ctx) else 1)
 # max5x keeps 2 reviewers
 MERGED = {"fit": ("icp_lookalike",), "truth_risk": ("signal_truth", "risk")}
 
@@ -82,11 +92,18 @@ def run(ctx) -> None:
     if not pool:
         return
     review_lenses = lenses(ctx)
-    need = len(review_lenses) + 2 + DOWNSTREAM_RESERVE
-    if ctx.llm.remaining < need:
+    round_cost = len(review_lenses) + 2
+    affordable = quota
+    while affordable > 0 and ctx.llm.remaining < round_cost + downstream_need(ctx, affordable):
+        affordable -= 1
+    if affordable <= 0:
         ctx.note(f"shortlist skipped: {ctx.llm.remaining} isolated calls left, the panel plus checking and "
-                 f"writing need {need}; nothing paid for this run")
+                 f"writing one lead need {round_cost + downstream_need(ctx, 1)}; nothing paid for this run")
         return
+    if affordable < quota:
+        ctx.note(f"lead quota lowered from {quota} to {affordable}: the isolated-call budget can check and write "
+                 f"only {affordable} this run")
+        quota = affordable
 
     n_clients = ctx.conn.execute("SELECT count(*) FROM clients").fetchone()[0]
     rub = rubric(ctx, n_clients, quota)
@@ -97,7 +114,7 @@ def run(ctx) -> None:
     for start in range(0, len(pool), PANEL_BATCH):
         if len(passed) >= quota:
             break
-        if start and ctx.llm.remaining < len(review_lenses) + 2 + DOWNSTREAM_RESERVE:
+        if start and ctx.llm.remaining < round_cost + downstream_need(ctx, quota):
             ctx.note(f"shortlist stopped after {start} of {len(pool)} companies: the call budget is kept for "
                      "checking and writing")
             break
@@ -167,9 +184,9 @@ def _panel(ctx, batch: list[sqlite3.Row], offset: int, rub: dict, review_lenses:
         if v is None:
             _save(ctx, a, "not_picked", None, "no verdict from the panel", findings[a["domain"]])
             continue
-        if not reviewed_by[a["domain"]]:
-            # no lens looked at it: neither paid for nor put on cooldown, so the next run reconsiders it
-            _save(ctx, a, "not_picked", None, "no reviewer covered it this run", findings[a["domain"]])
+        if reviewed_by[a["domain"]] != set(review_lenses):
+            # a lens skipped it: no paying on half a review, and no cooldown, so the next run reconsiders it
+            _save(ctx, a, "not_picked", None, "not every reviewer covered it this run", findings[a["domain"]])
             ctx.count("shortlist_unreviewed")
             continue
         final = round(max(0.0, (a["prescore"] or 0) + min(0, v.penalty)), 1)
