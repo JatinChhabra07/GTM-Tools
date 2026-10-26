@@ -399,7 +399,8 @@ def accounts_build(product: str = typer.Option(...), estimate: bool = typer.Opti
     cfg = config.load(product)
     with product_lock(product):
         conn = store.open_state(product)
-        session = llm.Session(conn, run_id=f"tal-{now_iso()[:10]}", cap=12, model=cfg.usage.model)
+        cap = 24 if cfg.usage.profile == "max20x" else 12  # each call classifies one search group or list
+        session = llm.Session(conn, run_id=f"tal-{now_iso()[:10]}", cap=cap, model=cfg.usage.model)
         icp_q, look_q = accounts.icp_queries(cfg), accounts.lookalike_queries(conn, product)
         if not icp_q and not look_q:
             _fail("no ICP segments, clients or dream customers yet: run /gtm-icp and /gtm-clients first")

@@ -43,11 +43,14 @@ def is_junk(domain: str) -> bool:
             or any(d == j or d.endswith("." + j) for j in JUNK_DOMAINS) or d.endswith(".gov") or d.endswith(".edu"))
 
 
+_VALID_DOMAIN = re.compile(r"^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$")
+
+
 def ensure_account(conn: sqlite3.Connection, *, domain: str, name: str, source: str, evidence: str,
                    linkedin_url: str | None = None, status: str = "new") -> bool:
     """Insert if new. Returns True when created. Resolution evidence is required (plan §3)."""
     domain = domain_of(domain)
-    if not domain or not evidence.startswith("http"):
+    if not _VALID_DOMAIN.match(domain) or not evidence.startswith("http"):
         return False
     if looks_like_url(name):
         name = domain  # a placeholder: the profiler replaces it with the site's own name
@@ -337,7 +340,7 @@ def icp_queries(cfg: ProductConfig) -> list[str]:
 
 _MD_LINK = re.compile(r"\[([^\]\n]{2,80})\]\((https?://[^)\s]+)\)")
 _BARE_DOMAIN = re.compile(r"\b((?:[a-z0-9-]+\.)+(?:com|co|io|shop|store|us|in|co\.in|net|org|ai|app|brand))\b", re.I)
-MAX_LISTS = 6
+MAX_LISTS = 12  # the call cap usually stops list mining first (12 calls on max5x, 24 on max20x)
 MAX_PER_LIST = 40
 
 
@@ -409,25 +412,33 @@ def candidates_from_search(llm_session, cfg: ProductConfig, queries: list[str] |
                 seen = {h["engine"] for h in cand["hits"]}
                 cand["hits"] += [{"engine": e, "evidence": ev, "detail": det} for e, det in via.items() if e not in seen]
 
+    list_query: dict[str, str] = {}  # list url -> the query that surfaced it first
     for engine, group in groupby(tagged, key=lambda q: q[0]):
         qs = [q for _, q in group]
         for i in range(0, len(qs), 3):
             batch = qs[i:i + 3]
-            try:
-                res = wigolo.search(batch, max_results=10)
-            except Exception:
-                continue
-            results = [r for r in (res.get("results", []) if isinstance(res, dict) else []) if r.get("url")]
+            # one search per query: a multi-query search returns results for the first query only
+            results, seen_urls = [], set()
+            for q in batch:
+                try:
+                    res = wigolo.search([q], max_results=10)
+                except Exception:
+                    continue
+                for r in (res.get("results", []) if isinstance(res, dict) else []):
+                    if r.get("url") and r["url"] not in seen_urls:
+                        seen_urls.add(r["url"])
+                        list_query.setdefault(r["url"], q)
+                        results.append(r)
             if results and llm_session.remaining > 0:
                 accept(_classify(llm_session, cfg, competitors, results), results, lambda u: u,
                        {engine: "search: " + " | ".join(batch)})
-    # engines take turns, so the first engine's lists can't use up every slot; an unreadable list
-    # costs no slot (its fetch is free, only the classification call counts)
-    by_engine: dict[str, list] = {}
+    # lists take turns by engine, then by the query that surfaced them, so one query's lists can't
+    # use up every slot; an unreadable list costs no slot (its fetch is free, only classifying counts)
+    by_source: dict[tuple, list] = {}
     for item in lists.items():
-        by_engine.setdefault(next(iter(item[1]["via"])), []).append(item)
+        by_source.setdefault((next(iter(item[1]["via"])), list_query.get(item[0], "")), []).append(item)
     mined = 0
-    for list_url, lst in [x for turn in zip_longest(*by_engine.values()) for x in turn if x]:
+    for list_url, lst in [x for turn in zip_longest(*by_source.values()) for x in turn if x]:
         if mined >= MAX_LISTS or llm_session.remaining <= 0:
             break
         try:

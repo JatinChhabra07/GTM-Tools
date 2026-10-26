@@ -240,3 +240,18 @@ def test_rescore_drops_a_subdomain_of_a_known_company(world):
     accounts.rescore_accounts(conn, config.load(SLUG))
     assert conn.execute("SELECT status FROM accounts WHERE domain='m.brandly.example'").fetchone()[0] == "dropped"
     assert conn.execute("SELECT status FROM accounts WHERE domain='brandly.example'").fetchone()[0] != "dropped"
+
+
+def test_each_query_is_searched_on_its_own_and_bad_domains_are_refused(world, monkeypatch):
+    from gtm import accounts, llm
+    from gtm.sources import wigolo
+    asked = []
+    monkeypatch.setattr(wigolo, "search", lambda q, **kw: asked.append(list(q)) or {"results": []})
+    conn = store.open_state(SLUG)
+    accounts.candidates_from_search(llm.Session(conn, run_id="t", cap=6), config.load(SLUG),
+                                    [("icp", "a companies IN"), ("icp", "b companies IN"), ("icp", "c companies IN")],
+                                    competitors=[])
+    assert asked == [["a companies IN"], ["b companies IN"], ["c companies IN"]]
+    assert not accounts.ensure_account(conn, domain="-thomaswhite.com", name="x", source="tal",
+                                       evidence="https://list.example/")
+    assert accounts.ensure_account(conn, domain="good-co.in", name="Good", source="tal", evidence="https://good-co.in/")
