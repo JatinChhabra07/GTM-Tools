@@ -19,12 +19,14 @@ from gtm.util import now, parse_iso
 # ccTLD -> country, only used to ADD a block (plan §4.1); generic TLDs are neutral
 CCTLD = {"in": "IN", "uk": "GB", "de": "DE", "fr": "FR", "es": "ES", "it": "IT", "nl": "NL", "se": "SE",
          "ie": "IE", "pl": "PL", "pt": "PT", "be": "BE", "at": "AT", "dk": "DK", "fi": "FI", "eu": "DE",
-         "ch": "CH", "no": "NO", "au": "AU", "ca": "CA", "sg": "SG", "ae": "AE", "jp": "JP", "br": "BR"}
+         "ch": "CH", "no": "NO", "au": "AU", "ca": "CA", "sg": "SG", "ae": "AE", "jp": "JP", "br": "BR",
+         "ng": "NG"}
 COUNTRY_NAMES = {
     "india": "IN", "bharat": "IN", "united states": "US", "usa": "US", "us": "US", "united states of america": "US",
     "united kingdom": "GB", "uk": "GB", "great britain": "GB", "england": "GB", "scotland": "GB", "wales": "GB",
     "northern ireland": "GB", "canada": "CA", "australia": "AU", "new zealand": "NZ", "singapore": "SG",
     "united arab emirates": "AE", "uae": "AE", "switzerland": "CH", "japan": "JP", "brazil": "BR",
+    "nigeria": "NG",
     # EU/EEA in English and their own language: an EU lead must never fall through to "unknown"
     "austria": "AT", "österreich": "AT", "belgium": "BE", "belgië": "BE", "belgique": "BE", "bulgaria": "BG",
     "croatia": "HR", "hrvatska": "HR", "cyprus": "CY", "czechia": "CZ", "czech republic": "CZ", "česko": "CZ",
@@ -42,6 +44,8 @@ COUNTRY_NAMES = {
     "munich": "DE", "amsterdam": "NL", "dublin": "IE", "madrid": "ES", "barcelona": "ES", "stockholm": "SE",
     "milan": "IT", "vienna": "AT", "warsaw": "PL", "brussels": "BE", "copenhagen": "DK", "lisbon": "PT",
     "helsinki": "FI", "zurich": "CH", "toronto": "CA", "vancouver": "CA", "sydney": "AU", "dubai": "AE",
+    "abu dhabi": "AE", "sharjah": "AE", "melbourne": "AU", "brisbane": "AU", "perth": "AU", "lagos": "NG",
+    "abuja": "NG",
     "san francisco bay area": "US", "new york city metropolitan area": "US", "greater new york city area": "US",
     "new york": "US", "san francisco": "US", "los angeles": "US", "chicago": "US", "boston": "US",
     "seattle": "US", "austin": "US", "miami": "US", "denver": "US", "atlanta": "US",
